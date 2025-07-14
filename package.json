@@ -1,0 +1,29 @@
+{
+  "name": "starlink-handover-visualizer",
+  "version": "1.0.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve --open",
+    "build": "ng build"
+  },
+  "dependencies": {
+    "@angular/animations": "^17.3.0",
+    "@angular/common": "^17.3.0",
+    "@angular/compiler": "^17.3.0",
+    "@angular/core": "^17.3.0",
+    "@angular/forms": "^17.3.0",
+    "@angular/platform-browser": "^17.3.0",
+    "@angular/platform-browser-dynamic": "^17.3.0",
+    "rxjs": "~7.8.0",
+    "satellite.js": "^4.1.3",
+    "three": "^0.160.0",
+    "@types/three": "^0.160.0",
+    "zone.js": "~0.14.4"
+  },
+  "devDependencies": {
+    "@angular/cli": "^17.3.0",
+    "@angular/compiler-cli": "^17.3.0",
+    "@angular-devkit/build-angular": "^17.3.0",
+    "typescript": "~5.2.2"
+  }
+}

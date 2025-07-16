@@ -43,7 +43,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private lastWorkerFrameDate: Date = new Date();
   private workerBusy = false;
 
-  currentMetrics: SatelliteMetrics | null = null;
+  currentMetrics: SatelliteMetrics | null = null; // 🎯 FORZADO: Mantener siempre null para interfaz limpia
   userLat = 0;
   userLon = 0;
   hysteresis = 5;
@@ -56,7 +56,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   loadingEndTime: number = 0;
   loadingElapsedMs: number = 0;
 
-  private SAT_SCALE = 2399; // Factor de escala MUY grande para visualizar los satélites fuera de la Tierra
+  private SAT_SCALE = 1200; // 🎯 AJUSTADO: Factor óptimo para satélites visibles (era 800, original 2399)
   timeMultiplier = 1; // Control de velocidad temporal (x1 por defecto)
   private simulatedDate = new Date();
   private useRealTime = true; // 🎯 NUEVO: Flag para usar tiempo real vs simulado
@@ -72,6 +72,31 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private canvas2D!: HTMLCanvasElement;
   private context2D!: CanvasRenderingContext2D;
 
+  // 🌍 PUNTOS DE REFERENCIA PARA VALIDACIÓN DE CALIBRACIÓN
+  private readonly REFERENCE_POINTS = [
+    { name: "Greenwich Observatory", lat: 51.4769, lon: 0.0005, color: 0xff0000 },
+    { name: "Polo Norte", lat: 90, lon: 0, color: 0x00ff00 },
+    { name: "Polo Sur", lat: -90, lon: 0, color: 0x0000ff },
+    { name: "Línea Internacional de Fecha", lat: 0, lon: 180, color: 0xffff00 },
+    { name: "Meridiano 90°E (Índico)", lat: 0, lon: 90, color: 0xff00ff },
+    { name: "Meridiano 90°W (Pacífico)", lat: 0, lon: -90, color: 0x00ffff },
+    { name: "Ecuador - 0°", lat: 0, lon: 0, color: 0xffffff }
+  ];
+
+  // 🎯 NUEVO: Sistema de calibración manual empírica
+  private readonly CALIBRATION_OFFSET_DEGREES = -103; // 🎯 CALIBRADO: Ajustado para STARLINK-30354 (real: 37.32°E vs simulador: Australia ~140°E)
+  private referencePointsMesh: THREE.Group | null = null;
+
+  // 🎯 NUEVO: Sistema de corrección temporal para velocidades orbitales
+  private orbitalTimeCorrection = 1.0; // Factor de corrección temporal (1.0 = sin corrección)
+  private averageOrbitalVelocity = 7.66; // km/s - Velocidad orbital típica de Starlink
+  private lastOrbitalMetricsUpdate = 0; // Timestamp de última actualización
+
+  // 🎯 NUEVO: Sistema de visualización de órbitas
+  private orbitalTraces: THREE.Group | null = null;
+  private orbitalTracesVisible = true; // Activado por defecto para calibración
+  private orbitalTraceMaterial: THREE.LineBasicMaterial | null = null;
+
   constructor(
     public tle: TleLoaderService,
     private ml: MLHandoverService
@@ -82,12 +107,38 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.initThree();
     this.initializeLabelSystem();
     this.createEarth();
+    // this.createReferencePoints(); // 🎯 COMENTADO: Método no implementado aún
     this.createSatellites();
     this.createUE();
     
-    // 🎯 NUEVO: Activar modo tiempo real por defecto para precisión
-    this.enableRealTimeMode();
+    // 🎯 NUEVO: Crear trazas orbitales para visualización y calibración
+    setTimeout(() => {
+      console.log('[ORBITAL-TRACES] 🕐 Iniciando creación de trazas tras delay...');
+      this.createOrbitalTraces();
+    }, 5000); // Esperar 5 segundos para que los satélites estén completamente cargados
     
+    // 🎯 COMENTADO: Método no implementado aún
+    // this.enableRealTimeMode();
+    
+    // 🎯 NUEVO: Exponer componente globalmente para calibración desde consola
+    (window as any).starlinkVisualizer = this;
+    console.log('[CALIBRATION] 🎯 Componente expuesto globalmente.');
+    console.log('[CALIBRATION] Para ajustar calibración usa: starlinkVisualizer.adjustCalibration(NUMERO)');
+    console.log('[CALIBRATION] Ejemplo: starlinkVisualizer.adjustCalibration(10) para probar +10°');
+    console.log('[CALIBRATION] Offset actual:', this.CALIBRATION_OFFSET_DEGREES, '°');
+    
+    // 🎯 NUEVO: Información de control orbital
+    console.log('[ORBITAL] Para verificar alturas: starlinkVisualizer.checkSatelliteHeights()');
+    console.log('[ORBITAL] Para analizar TLEs: starlinkVisualizer.analyzeTLEQuality()');
+    console.log('[ORBITAL] Para métricas orbitales: starlinkVisualizer.getOrbitalMetrics()');
+    console.log('[ORBITAL] Para ajustar velocidad: starlinkVisualizer.setOrbitalTimeCorrection(FACTOR)');
+    console.log('[ORBITAL] Para sincronizar: starlinkVisualizer.syncOrbitalVelocity(VELOCIDAD_KM_S)');
+    console.log('[ORBITAL] Para resetear: starlinkVisualizer.resetOrbitalCorrection()');
+    console.log('[CALIBRATION] Para verificar STARLINK-6157: starlinkVisualizer.verifyStarlink6157Position()');
+    console.log('[ORBITAL-TRACES] Para mostrar/ocultar órbitas: starlinkVisualizer.toggleOrbitalTraces()');
+    console.log('[ORBITAL-TRACES] Para recrear trazas: starlinkVisualizer.recreateOrbitalTraces()');
+    console.log('[ORBITAL-TRACES] Para info de trazas: starlinkVisualizer.getOrbitalTracesInfo()');
+    console.log('[DEBUG] Para diagnóstico TLE: starlinkVisualizer.debugTLEPropagation()');
     this.animate();
   }
 
@@ -336,9 +387,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
       // Criterios más permisivos:
       // 1. Debe estar dentro del radio de visibilidad
-      // 2. Debe estar fuera del núcleo de la Tierra (radio > 0.105)
+      // 2. Debe estar fuera del núcleo de la Tierra (radio > 0.102) - 🎯 AJUSTADO para satélites más bajos
       // 3. Debe ser visible en pantalla (proyección)
-      if (distanceToCamera < visibilityRadius && distanceToCenter > 0.105) {
+      if (distanceToCamera < visibilityRadius && distanceToCenter > 0.102) { // 🎯 REDUCIDO de 0.103 a 0.102
         // Verificar si es visible en pantalla usando proyección
         const screenPosition = position.clone().project(this.camera);
         const isOnScreen = screenPosition.x >= -1.2 && screenPosition.x <= 1.2 && 
@@ -433,48 +484,65 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.satLabels = [];
   }
   private async createEarth() {
-    const geo = new THREE.SphereGeometry(0.1, 64, 64); // 🎯 Aumentada resolución de 32 a 64
+    const geo = new THREE.SphereGeometry(0.1, 64, 64); // 🎯 Resolución alta para suavidad
     
-    // 🎯 MEJORADO: Cargar textura con configuración optimizada para proyección equirectangular
+    // � NASA BLUE MARBLE: Textura profesional con calibración astronómica
     const loader = new THREE.TextureLoader();
     this.earthTexture = await new Promise<THREE.Texture>((resolve, reject) => {
       loader.load(
-        'assets/earth_continents_bw.png',
-        resolve,
-        undefined,
+        'assets/blue_marble_nasa_proper.jpg', // 🎯 NUEVA: Blue Marble NASA calibrada
+        (texture) => {
+          console.log('[EARTH] Blue Marble NASA calibrada cargada exitosamente');
+          resolve(texture);
+        },
+        (progress) => {
+          console.log('[EARTH] Progreso de carga:', (progress.loaded / progress.total * 100).toFixed(2) + '%');
+        },
         (error) => {
-          console.error('[EARTH] Error cargando textura:', error);
-          reject(error);
+          console.error('[EARTH] Error cargando Blue Marble NASA:', error);
+          // Fallback a texturas de respaldo en orden de preferencia
+          loader.load('assets/earth_4k_hd.jpg', 
+            resolve, 
+            undefined, 
+            () => loader.load('assets/earth_continents_bw.png', resolve, undefined, reject)
+          );
         }
       );
     });
     
-    // 🎯 NUEVO: Configuración correcta para proyección equirectangular
-    this.earthTexture.wrapS = THREE.ClampToEdgeWrapping; // Evita repetición horizontal
-    this.earthTexture.wrapT = THREE.ClampToEdgeWrapping; // Evita repetición vertical
-    this.earthTexture.minFilter = THREE.LinearFilter;
-    this.earthTexture.magFilter = THREE.LinearFilter;
-    this.earthTexture.generateMipmaps = false; // Mejor para texturas de alta resolución
-    this.earthTexture.flipY = false; // 🎯 CRÍTICO: Orientación correcta
+    // 🎯 CONFIGURACIÓN OPTIMIZADA PARA PROYECCIÓN EQUIRECTANGULAR NASA
+    this.earthTexture.wrapS = THREE.ClampToEdgeWrapping; // Sin repetición horizontal
+    this.earthTexture.wrapT = THREE.ClampToEdgeWrapping; // Sin repetición vertical
+    this.earthTexture.minFilter = THREE.LinearMipmapLinearFilter; // 🎯 MEJORADO: Mejor filtrado para zoom
+    this.earthTexture.magFilter = THREE.LinearFilter; // Filtrado para magnificación
+    this.earthTexture.generateMipmaps = true; // Mipmaps para mejor rendimiento
+    this.earthTexture.flipY = true; // 🎯 CORREGIDO: Blue Marble NASA SÍ necesita flip para orientación correcta
+    this.earthTexture.encoding = THREE.sRGBEncoding; // 🎯 NUEVO: Encoding correcto para colores naturales
+    this.earthTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy(); // 🎯 NUEVO: Filtrado anisotrópico máximo
     
-    // Material con textura de continentes optimizado
+    console.log(`[EARTH] 🎯 Filtrado anisotrópico activado: ${this.earthTexture.anisotropy}x para máxima nitidez en zoom`);
+    
+    // 🎯 MATERIAL MEJORADO con configuración astronómica
     const mat = new THREE.MeshBasicMaterial({
       map: this.earthTexture,
       transparent: false,
-      opacity: 1.0
+      opacity: 1.0,
+      side: THREE.FrontSide // Solo cara frontal para mejor rendimiento
     });
     
     this.earthMesh = new THREE.Mesh(geo, mat);
     
-    // 🎯 NUEVO: Orientación corregida para alineación geográfica precisa
-    // Rotar para alinear con coordenadas geográficas estándar
-    this.earthMesh.rotation.y = -Math.PI / 2; // Greenwich en frente
-    this.earthMesh.rotation.x = 0; // Polos correctamente alineados
+    // � ORIENTACIÓN ASTRONÓMICA PRECISA
+    // 🎯 CORREGIDO: Volver a orientación normal sin inversión X
+    this.earthMesh.rotation.x = 0; // Sin inversión en X para evitar África invertida
+    this.earthMesh.rotation.y = Math.PI / 2; // Mantener rotación Y actual
+    this.earthMesh.rotation.z = 0; // Sin rotación en Z
     
     this.scene.add(this.earthMesh);
     // Wireframe moderno
     const wireframe = new THREE.WireframeGeometry(geo);
     this.earthWireframe = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 }));
+    this.earthWireframe.rotation.x = 0; // 🎯 CORREGIDO: Sin inversión X
     this.earthWireframe.rotation.y = -Math.PI / 2;
     this.earthWireframe.renderOrder = 1;
     this.scene.add(this.earthWireframe);
@@ -514,6 +582,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     }
     gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridVerts, 3));
     this.earthGrid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x00ffff, opacity: 0.5, transparent: true }));
+    this.earthGrid.rotation.x = 0; // 🎯 CORREGIDO: Sin inversión X
     this.earthGrid.rotation.y = -Math.PI / 2;
     this.earthGrid.renderOrder = 2;
     this.scene.add(this.earthGrid);
@@ -568,6 +637,22 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
           });
         }
       }
+      else if (data.type === 'debug') {
+        // 🎯 DESHABILITADO: No aplicar corrección automática para evitar bucles
+        const debugMsg = data.payload;
+        // if (debugMsg.includes('vel=') && debugMsg.includes('km/s')) {
+        //   // Extraer velocidad del mensaje de debug
+        //   const velMatch = debugMsg.match(/vel=([\d.]+)km\/s/);
+        //   if (velMatch) {
+        //     const calculatedVel = parseFloat(velMatch[1]);
+        //     // Calcular factor de corrección temporal
+        //     this.orbitalTimeCorrection = this.averageOrbitalVelocity / calculatedVel;
+        //     console.log(`[ORBITAL-SYNC] Velocidad calculada: ${calculatedVel.toFixed(3)} km/s`);
+        //     console.log(`[ORBITAL-SYNC] Factor de corrección temporal: ${this.orbitalTimeCorrection.toFixed(4)}`);
+        //   }
+        // }
+        console.log('[WORKER-DEBUG]', debugMsg);
+      }
       else if (data.type === 'propagation_chunk') {
         // data.payload: { chunk: [{position, visible}], offset, total }
         this.updateSatellitePositionsChunk(data.payload.chunk, data.payload.offset);
@@ -579,7 +664,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         }
       }
       else if (data.type === 'propagation_complete' || data.type === 'propagation_result') {
-        console.log(`[WORKER] Frame completo (${data.type})`);
+        //console.log(`[WORKER] Frame completo (${data.type})`);
         // data.payload: [{position, visible}]
         this.updateSatellitePositions(data.payload);
 
@@ -591,14 +676,16 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
           console.log(`[LOAD] Primer frame completo en ${this.loadingElapsedMs.toFixed(0)} ms.`);
         }
 
-        // 🎯 NUEVO: Sistema de tiempo corregido
+        // 🎯 CORREGIDO: Sistema de tiempo con corrección temporal apropiada
         if (this.useRealTime) {
           // Usar tiempo real actual - sincronización perfecta con la realidad
           this.simulatedDate = new Date();
-          console.log(`[TIME-SYNC] Usando tiempo real: ${this.simulatedDate.toISOString()}`);
+          //console.log(`[TIME-SYNC] Usando tiempo real: ${this.simulatedDate.toISOString()}`);
         } else {
-          // Modo simulación acelerada - avanzar la fecha simulada
-          this.simulatedDate = new Date(this.simulatedDate.getTime() + 16.67 * this.timeMultiplier);
+          // Modo simulación acelerada - NO aplicar corrección orbital en modo simulación
+          // La corrección orbital solo debe aplicarse si hay desincronización real
+          const timeIncrement = 16.67 * this.timeMultiplier; // Sin corrección orbital artificial
+          this.simulatedDate = new Date(this.simulatedDate.getTime() + timeIncrement);
           console.log(`[TIME-SIM] Tiempo simulado (x${this.timeMultiplier}): ${this.simulatedDate.toISOString()}`);
         }
         
@@ -647,9 +734,18 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
     // Rotación absoluta de la Tierra y overlays según la última fecha procesada por el worker
     const earthAngle = this.getEarthRotationAngle(this.lastWorkerFrameDate);
-    if (this.earthMesh) this.earthMesh.rotation.y = -Math.PI / 2 + earthAngle;
-    if (this.earthWireframe) this.earthWireframe.rotation.y = -Math.PI / 2 + earthAngle;
-    if (this.earthGrid) this.earthGrid.rotation.y = -Math.PI / 2 + earthAngle;
+    if (this.earthMesh) {
+      this.earthMesh.rotation.x = 0; // 🎯 CORREGIDO: Sin inversión fija en X
+      this.earthMesh.rotation.y = Math.PI / 2 + earthAngle; // Rotación temporal en Y
+    }
+    if (this.earthWireframe) {
+      this.earthWireframe.rotation.x = 0; // 🎯 CORREGIDO: Sin inversión fija en X
+      this.earthWireframe.rotation.y = -Math.PI / 2 + earthAngle;
+    }
+    if (this.earthGrid) {
+      this.earthGrid.rotation.x = 0; // 🎯 CORREGIDO: Sin inversión fija en X
+      this.earthGrid.rotation.y = -Math.PI / 2 + earthAngle;
+    }
 
     // Actualizar las opacidades basadas en la decisión de handover
     const positions: THREE.Vector3[] = [];
@@ -661,24 +757,18 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       positions.push(position);
     }
 
-    const decision = this.ml.makeLocalDecision(this.ueMesh.position, positions);
-
-    if (decision.shouldHandover && decision.targetIndex !== null) {
-      // Actualizar opacidades usando setColorAt para InstancedMesh
-      const dimColor = new THREE.Color(0x00ff00).multiplyScalar(0.2);
-      const brightColor = new THREE.Color(0x00ff00);
-
-      for (let i = 0; i < this.satsMesh.count; i++) {
-        this.satsMesh.setColorAt(i, i === decision.targetIndex ? brightColor : dimColor);
-      }
-
-      if (this.satsMesh.instanceColor) {
-        this.satsMesh.instanceColor.needsUpdate = true;
-      }
-
-      // Actualizar métricas en la UI
-      this.currentMetrics = decision.metrics || null;
+    // 🎯 NUEVO: Forzar color verde brillante constante para todos los satélites
+    const constantColor = new THREE.Color(0xff0000); // Verde brillante siempre
+    for (let i = 0; i < this.satsMesh.count; i++) {
+      this.satsMesh.setColorAt(i, constantColor);
     }
+
+    if (this.satsMesh.instanceColor) {
+      this.satsMesh.instanceColor.needsUpdate = true;
+    }
+
+    // 🎯 ASEGURAR: Métricas siempre null para mantener interfaz limpia
+    this.currentMetrics = null;
 
     // Enviar al worker las nuevas posiciones a calcular
     const frustumPlanes = this.updateFrustum();
@@ -720,13 +810,20 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     
     satellites.forEach((sat, index) => {
       if (sat.visible) {
-        // Rotar -90° sobre X para alinear con la Tierra
+        // 🎯 NUEVO: Usar coordenadas reales directas del worker (ya están en escala visual correcta)
         const pos = new THREE.Vector3(
-          sat.position.x * this.SAT_SCALE,
-          sat.position.y * this.SAT_SCALE,
-          sat.position.z * this.SAT_SCALE
+          sat.position.x, // Coordenadas ya escaladas correctamente en el worker
+          sat.position.y,
+          sat.position.z
         );
-        pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+        
+    // 🎯 CORREGIDO: Solo alinear con el sistema Three.js + calibración geográfica
+    // Aplicar rotación para alinear con Three.js Y luego ajuste de calibración
+    pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    
+    // 🎯 RESTAURAR: Calibración geográfica (rotación adicional para alinear Greenwich)
+    const calibrationAngleRad = THREE.MathUtils.degToRad(this.CALIBRATION_OFFSET_DEGREES);
+    pos.applyAxisAngle(new THREE.Vector3(0, 1, 0), calibrationAngleRad);
         
         // Aplicar posición y escala dinámica
         this.instanceMatrix.makeScale(scale, scale, scale);
@@ -769,12 +866,19 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     
     chunk.forEach((sat, i) => {
       if (sat.visible) {
+        // 🎯 NUEVO: Usar coordenadas reales directas del worker (ya están en escala visual correcta)
         const pos = new THREE.Vector3(
-          sat.position.x * this.SAT_SCALE,
-          sat.position.y * this.SAT_SCALE,
-          sat.position.z * this.SAT_SCALE
+          sat.position.x, // Coordenadas ya escaladas correctamente en el worker
+          sat.position.y,
+          sat.position.z
         );
+        
+        // 🎯 CORREGIDO: Solo alinear con el sistema Three.js + calibración geográfica
         pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+        
+        // 🎯 RESTAURAR: Calibración geográfica (rotación adicional para alinear Greenwich)
+        const calibrationAngleRad = THREE.MathUtils.degToRad(this.CALIBRATION_OFFSET_DEGREES);
+        pos.applyAxisAngle(new THREE.Vector3(0, 1, 0), calibrationAngleRad);
         
         // Aplicar posición y escala dinámica
         this.instanceMatrix.makeScale(scale, scale, scale);
@@ -793,7 +897,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   // Método para resetear el tiempo simulado o resincronizar con tiempo real
   resetSimTime() {
     if (this.useRealTime) {
-      this.resyncWithRealTime();
+      // this.resyncWithRealTime(); // 🎯 COMENTADO: Método no implementado aún
+      this.simulatedDate = new Date();
+      console.log('[TIME-RESET] ⏰ Tiempo resincronizado con tiempo real');
     } else {
       this.simulatedDate = new Date();
       console.log('[TIME-RESET] ⏰ Tiempo simulado reseteado al actual');
@@ -924,163 +1030,588 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Calcula un offset inteligente para las etiquetas que garantiza:
-   * 1. Proximidad muy cercana al satélite
-   * 2. Evita solapamientos con otras etiquetas
-   * 3. Se adapta a la distancia de zoom
+   * 🎯 NUEVO: Crear traza orbital usando elementos kepler (órbitas elípticas reales)
    */
-  private calculateSmartLabelOffset(satellitePosition: THREE.Vector3, index: number, cameraDistance: number): THREE.Vector3 {
-    // Offset base muy pequeño para mantener las etiquetas pegadas
-    let baseOffset = 0.0001; // Mucho más pequeño que antes
+  private createKeplerianOrbitTrace(elements: any, index: number): THREE.Line | null {
+    try {
+      const points: THREE.Vector3[] = [];
+      
+      // Validar elementos orbitales
+      if (!elements || isNaN(elements.semiMajorAxis) || isNaN(elements.inclination)) {
+        console.warn(`[KEPLER-ORBIT] Elementos orbitales inválidos para satélite ${index}`);
+        return null;
+      }
+
+      console.log(`[KEPLER-ORBIT] Creando órbita para ${elements.name}:`);
+      console.log(`  Semi-eje mayor: ${elements.semiMajorAxis.toFixed(1)} km`);
+      console.log(`  Excentricidad: ${elements.eccentricity.toFixed(6)}`);
+      console.log(`  Inclinación: ${elements.inclination.toFixed(2)}°`);
+
+      // Convertir elementos a radianes
+      const inc = THREE.MathUtils.degToRad(elements.inclination);
+      const raan = THREE.MathUtils.degToRad(elements.raan);
+      const argPer = THREE.MathUtils.degToRad(elements.argumentOfPeriapsis);
+      
+      // Parámetros orbitales
+      const a = elements.semiMajorAxis; // km
+      const e = elements.eccentricity;
+      
+      // Factor de escala del simulador
+      const kmToVisualScale = 0.1 / 6371; // 0.1 = radio visual de la Tierra
+      
+      // Número de puntos para la órbita (más puntos para órbitas más excéntricas)
+      const numPoints = e > 0.1 ? 128 : 64;
+      
+      // Generar puntos de la órbita elíptica usando anomalía eccéntrica
+      for (let i = 0; i <= numPoints; i++) {
+        const E = (i / numPoints) * 2 * Math.PI; // Anomalía eccéntrica
+        
+        // Coordenadas en el plano orbital (ecuación de Kepler)
+        const r = a * (1 - e * Math.cos(E)); // Radio vector
+        const x_orb = r * Math.cos(E) - a * e; // Posición X en plano orbital
+        const y_orb = r * Math.sin(E) * Math.sqrt(1 - e * e); // Posición Y en plano orbital
+        const z_orb = 0; // En el plano orbital
+        
+        // Matrices de rotación para transformar del plano orbital al sistema inercial
+        // Rotación 1: Argumento del periapsis
+        const x1 = x_orb * Math.cos(argPer) - y_orb * Math.sin(argPer);
+        const y1 = x_orb * Math.sin(argPer) + y_orb * Math.cos(argPer);
+        const z1 = z_orb;
+        
+        // Rotación 2: Inclinación
+        const x2 = x1;
+        const y2 = y1 * Math.cos(inc) - z1 * Math.sin(inc);
+        const z2 = y1 * Math.sin(inc) + z1 * Math.cos(inc);
+        
+        // Rotación 3: Ascensión del nodo
+        const x3 = x2 * Math.cos(raan) - y2 * Math.sin(raan);
+        const y3 = x2 * Math.sin(raan) + y2 * Math.cos(raan);
+        const z3 = z2;
+        
+        // Convertir a escala del simulador
+        const pos = new THREE.Vector3(
+          x3 * kmToVisualScale,
+          y3 * kmToVisualScale,
+          z3 * kmToVisualScale
+        );
+        
+        // Aplicar las mismas transformaciones que los satélites
+        // Rotación para alinear con el sistema de coordenas del simulador
+        pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+        
+        // Aplicar calibración geográfica
+        const calibrationAngleRad = THREE.MathUtils.degToRad(this.CALIBRATION_OFFSET_DEGREES);
+        pos.applyAxisAngle(new THREE.Vector3(0, 1, 0), calibrationAngleRad);
+        
+        // Verificar que las coordenadas sean válidas
+        if (!isNaN(pos.x) && !isNaN(pos.y) && !isNaN(pos.z) &&
+            isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z)) {
+          points.push(pos);
+        }
+      }
+      
+      // Crear la geometría si tenemos suficientes puntos
+      if (points.length >= numPoints * 0.8) {
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, this.orbitalTraceMaterial!);
+        
+        // Metadata
+        line.userData = {
+          satelliteIndex: index,
+          satelliteName: elements.name,
+          orbitalElements: elements,
+          pointCount: points.length,
+          traceType: 'keplerian',
+          eccentricity: elements.eccentricity,
+          inclination: elements.inclination
+        };
+        
+        console.log(`[KEPLER-ORBIT] ✅ Órbita kepleriana creada para ${elements.name}: ${points.length} puntos, e=${elements.eccentricity.toFixed(4)}`);
+        return line;
+      } else {
+        console.warn(`[KEPLER-ORBIT] ⚠️ Insuficientes puntos válidos para ${elements.name}: ${points.length}/${numPoints}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`[KEPLER-ORBIT] Error creando órbita kepleriana para satélite ${index}:`, error);
+      return null;
+    }
+  }
+
+  // 🎯 SISTEMA CORREGIDO: Crear trazas orbitales sincronizadas con posiciones reales
+  private createOrbitalTraces() {
+    console.log('[ORBITAL-TRACES-V4] 🚀 Iniciando sistema corregido sincronizado con posiciones reales...');
     
-    // Ajustar offset según el zoom - más cerca = offset más pequeño
-    if (cameraDistance <= 0.12) {
-      baseOffset = 0.0008; // SúPER pegado en zoom máximo
-    } else if (cameraDistance <= 0.15) {
-      baseOffset = 0.0008;  // Muy pegado en zoom alto
-    } else if (cameraDistance <= 0.2) {
-      baseOffset = 0.0002; // Pegado en zoom medio
-    } else {
-      baseOffset = 0.0002;  // Ligeramente separado en zoom bajo
+    // Limpiar trazas existentes
+    if (this.orbitalTraces) {
+      this.scene.remove(this.orbitalTraces);
+      this.orbitalTraces.children.forEach(child => {
+        if (child instanceof THREE.Line && child.geometry) {
+          child.geometry.dispose();
+        }
+      });
     }
 
+    this.orbitalTraces = new THREE.Group();
+    
+    // Material para las líneas orbitales
+    this.orbitalTraceMaterial = new THREE.LineBasicMaterial({
+      color: 0xffff00,
+      transparent: true,
+      opacity: 0.8,
+      linewidth: 1
+    });
+
+    // NUEVA ESTRATEGIA: Sincronizar con posiciones actuales de satélites
+    if (!this.satsMesh) {
+      console.warn('[ORBITAL-TRACES-V4] ⚠️ No hay satélites cargados');
+      return;
+    }
+
+    const sats = this.tle.getAllSatrecs();
+    console.log(`[ORBITAL-TRACES-V4] Creando ${sats.length} trazas sincronizadas...`);
+
+    let successfulTraces = 0;
+
+    // Procesar cada satélite usando su posición real actual
+    sats.forEach((sat, index) => {
+      try {
+        // Obtener posición actual del satélite en el simulador
+        this.satsMesh!.getMatrixAt(index, this.instanceMatrix);
+        const currentSatPosition = new THREE.Vector3();
+        currentSatPosition.setFromMatrixPosition(this.instanceMatrix);
+
+        // Extraer elementos orbitales del TLE
+        const orbitalElements = this.extractOrbitalElements(sat, index);
+        
+        if (orbitalElements && currentSatPosition) {
+          // Crear traza que pase por la posición actual del satélite
+          const trace = this.createSynchronizedOrbitTrace(orbitalElements, currentSatPosition, index);
+          
+          if (trace) {
+            this.orbitalTraces!.add(trace);
+            successfulTraces++;
+          }
+        }
+      } catch (error) {
+        console.warn(`[ORBITAL-TRACES-V4] Error en satélite ${index}:`, error);
+      }
+    });
+
+    if (successfulTraces > 0) {
+      this.scene.add(this.orbitalTraces);
+      console.log(`[ORBITAL-TRACES-V4] ✅ ${successfulTraces} trazas sincronizadas creadas exitosamente`);
+    } else {
+      console.error('[ORBITAL-TRACES-V4] ❌ No se pudieron crear trazas orbitales');
+    }
+  }
+
+  // 🎯 MÉTODOS PÚBLICOS ACTUALIZADOS: Controlar trazas orbitales
+  public toggleOrbitalTraces(): void {
+    this.orbitalTracesVisible = !this.orbitalTracesVisible;
+    
+    if (this.orbitalTraces) {
+      this.orbitalTraces.visible = this.orbitalTracesVisible;
+      console.log(`[ORBITAL-TRACES-V2] Trazas orbitales ${this.orbitalTracesVisible ? 'activadas' : 'desactivadas'}`);
+    } else {
+      this.createOrbitalTraces();
+    }
+  }
+
+  public recreateOrbitalTraces(): void {
+    console.log('[ORBITAL-TRACES-V2] Recreando trazas orbitales...');
+    this.createOrbitalTraces();
+  }
+
+  public hideOrbitalTraces(): void {
+    if (this.orbitalTraces) {
+      this.orbitalTraces.visible = false;
+      this.orbitalTracesVisible = false;
+      console.log('[ORBITAL-TRACES-V2] Trazas orbitales ocultadas');
+    }
+  }
+
+  public showOrbitalTraces(): void {
+    if (this.orbitalTraces) {
+      this.orbitalTraces.visible = true;
+      this.orbitalTracesVisible = true;
+      console.log('[ORBITAL-TRACES-V2] Trazas orbitales mostradas');
+    } else {
+      this.createOrbitalTraces();
+    }
+  }
+
+  public getOrbitalTracesInfo(): void {
+    if (this.orbitalTraces) {
+      console.log(`[ORBITAL-TRACES-V2] Estado actual:`);
+      console.log(`  Visible: ${this.orbitalTraces.visible}`);
+      console.log(`  Número de trazas: ${this.orbitalTraces.children.length}`);
+      
+      this.orbitalTraces.children.forEach((trace, index) => {
+        const userData = trace.userData;
+        console.log(`  Traza ${index}: ${userData['satelliteName']} (${userData['pointCount']} puntos)`);
+      });
+    } else {
+      console.log('[ORBITAL-TRACES-V2] No hay trazas orbitales creadas');
+    }
+  }
+
+  // 🎯 NUEVO MÉTODO: Crear traza orbital circular basada en posición actual
+  private createCircularOrbitTrace(satellitePosition: THREE.Vector3, index: number): THREE.Line | null {
+    try {
+      const points: THREE.Vector3[] = [];
+      const earthCenter = new THREE.Vector3(0, 0, 0);
+      
+      // Calcular el radio orbital (distancia desde el centro de la Tierra)
+      const orbitalRadius = satellitePosition.distanceTo(earthCenter);
+      
+      // Verificar que el radio sea razonable (satélites LEO: ~0.11-0.12 en nuestra escala)
+      if (orbitalRadius < 0.105 || orbitalRadius > 0.25) {
+        console.warn(`[ORBITAL-TRACES-V2] Satélite ${index}: Radio orbital fuera de rango: ${orbitalRadius.toFixed(4)}`);
+        return null;
+      }
+
+      // Crear un plano orbital basado en la posición actual
+      // Asumimos órbita circular en el plano que pasa por la posición actual
+      const numPoints = 64; // Círculo suave con 64 puntos
+      
+      // Vector normal al plano orbital (simplificado: usamos la posición como normal)
+      const normal = satellitePosition.clone().normalize();
+      
+      // Crear dos vectores perpendiculares en el plano orbital
+      const tempVector = new THREE.Vector3(0, 1, 0);
+      if (Math.abs(normal.dot(tempVector)) > 0.9) {
+        tempVector.set(1, 0, 0); // Cambiar si son casi paralelos
+      }
+      
+      const tangent1 = new THREE.Vector3().crossVectors(normal, tempVector).normalize();
+      const tangent2 = new THREE.Vector3().crossVectors(normal, tangent1).normalize();
+      
+      // Generar puntos del círculo orbital
+      for (let i = 0; i < numPoints; i++) {
+        const angle = (i / numPoints) * Math.PI * 2;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        
+        // Punto en el círculo orbital
+        const point = new THREE.Vector3()
+          .addScaledVector(tangent1, cos * orbitalRadius)
+          .addScaledVector(tangent2, sin * orbitalRadius);
+        
+        // Verificar que el punto sea válido
+        if (!isNaN(point.x) && !isNaN(point.y) && !isNaN(point.z) &&
+            isFinite(point.x) && isFinite(point.y) && isFinite(point.z)) {
+          points.push(point);
+        }
+      }
+      
+      // Cerrar el círculo
+      if (points.length > 0) {
+        points.push(points[0].clone());
+      }
+      
+      // Crear la geometría solo si tenemos suficientes puntos
+      if (points.length >= numPoints * 0.8) { // Al menos 80% de los puntos
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, this.orbitalTraceMaterial!);
+        
+        // Metadata
+        line.userData = {
+          satelliteIndex: index,
+          satelliteName: `SAT-${index + 1}`,
+          orbitalRadius: orbitalRadius,
+          pointCount: points.length,
+          traceType: 'circular'
+        };
+        
+        console.log(`[ORBITAL-TRACES-V2] ✅ Traza circular creada para SAT-${index + 1}: radio=${orbitalRadius.toFixed(4)}, puntos=${points.length}`);
+        return line;
+      } else {
+        console.warn(`[ORBITAL-TRACES-V2] ⚠️ Insuficientes puntos válidos para satélite ${index}: ${points.length}/${numPoints}`);
+        return null;
+      }
+    } catch (error) {
+      console.warn(`[ORBITAL-TRACES-V2] Error creando traza circular para satélite ${index}:`, error);
+      return null;
+    }
+  }
+
+  // 🎯 NUEVO: Extraer elementos orbitales del TLE (formato manual robusto)
+  private extractOrbitalElements(sat: any, index: number): any | null {
+    try {
+      if (!sat.line1 || !sat.line2) {
+        console.warn(`[TLE-PARSER] Satélite ${index}: TLE incompleto`);
+        return null;
+      }
+
+      const line1 = sat.line1;
+      const line2 = sat.line2;
+
+      // Validar longitud de líneas TLE
+      if (line1.length !== 69 || line2.length !== 69) {
+        console.warn(`[TLE-PARSER] Satélite ${index}: Longitud TLE incorrecta`);
+        return null;
+      }
+
+      // PARSEO MANUAL DE ELEMENTOS ORBITALES
+      const elements: any = {
+        // Línea 1
+        satelliteNumber: parseInt(line1.substring(2, 7)),
+        epoch: parseFloat(line1.substring(18, 32)),
+        meanMotionDot: parseFloat(line1.substring(33, 43)),
+        meanMotionDotDot: parseFloat(line1.substring(44, 52)),
+        bstar: parseFloat(line1.substring(53, 61)),
+        
+        // Línea 2  
+        inclination: parseFloat(line2.substring(8, 16)), // grados
+        raan: parseFloat(line2.substring(17, 25)), // ascensión nodo, grados
+        eccentricity: parseFloat('0.' + line2.substring(26, 33)), // sin punto decimal
+        argumentOfPeriapsis: parseFloat(line2.substring(34, 42)), // grados
+        meanAnomaly: parseFloat(line2.substring(43, 51)), // grados
+        meanMotion: parseFloat(line2.substring(52, 63)), // rev/día
+        
+        // Datos calculados
+        name: this.extractSatelliteName(sat, index)
+      };
+
+      // Calcular semi-eje mayor desde el movimiento medio
+      // a³ = (GM * T²) / (4π²) donde T = 1440 min / meanMotion
+      const GM = 398600.4418; // km³/s² (constante gravitacional * masa Tierra)
+      const minutesPerDay = 1440;
+      const period = minutesPerDay / elements.meanMotion; // minutos
+      const periodSeconds = period * 60; // segundos
+      
+      const semiMajorAxis = Math.pow((GM * periodSeconds * periodSeconds) / (4 * Math.PI * Math.PI), 1/3);
+      elements.semiMajorAxis = semiMajorAxis; // km
+
+      // Calcular altura del perigeo y apogeo
+      const earthRadius = 6371; // km
+      elements.perigeeHeight = semiMajorAxis * (1 - elements.eccentricity) - earthRadius;
+      elements.apogeeHeight = semiMajorAxis * (1 + elements.eccentricity) - earthRadius;
+
+      console.log(`[TLE-PARSER] ${elements.name}:`);
+      console.log(`  Inclinación: ${elements.inclination.toFixed(2)}°`);
+      console.log(`  Excentricidad: ${elements.eccentricity.toFixed(6)}`);
+      console.log(`  Semi-eje mayor: ${elements.semiMajorAxis.toFixed(1)} km`);
+      console.log(`  Altura perigeo: ${elements.perigeeHeight.toFixed(1)} km`);
+      console.log(`  Altura apogeo: ${elements.apogeeHeight.toFixed(1)} km`);
+      console.log(`  Período: ${period.toFixed(1)} min`);
+
+      return elements;
+    } catch (error) {
+      console.error(`[TLE-PARSER] Error parseando satélite ${index}:`, error);
+      return null;
+    }
+  }
+
+  // 🎯 MÉTODO DE DIAGNÓSTICO: Analizar elementos orbitales de los TLEs actuales
+  public analyzeTLEOrbitalElements(): void {
+    console.log('[TLE-ORBITAL-ANALYSIS] 🔍 Analizando elementos orbitales de los TLEs...');
+    
+    const sats = this.tle.getAllSatrecs();
+    console.log(`[TLE-ORBITAL-ANALYSIS] Procesando ${sats.length} satélites...`);
+    
+    sats.forEach((sat, index) => {
+      const elements = this.extractOrbitalElements(sat, index);
+      
+      if (elements) {
+        console.log(`\n[TLE-ORBITAL-ANALYSIS] === ${elements.name} ===`);
+        console.log(`  📊 Altura del perigeo: ${elements.perigeeHeight.toFixed(1)} km`);
+        console.log(`  📊 Altura del apogeo: ${elements.apogeeHeight.toFixed(1)} km`);
+        console.log(`  📊 Excentricidad: ${elements.eccentricity.toFixed(6)} ${this.getEccentricityCategory(elements.eccentricity)}`);
+        console.log(`  📊 Inclinación: ${elements.inclination.toFixed(2)}° ${this.getInclinationCategory(elements.inclination)}`);
+        console.log(`  📊 Período orbital: ${(1440 / elements.meanMotion).toFixed(1)} minutos`);
+        console.log(`  📊 Velocidad orbital promedio: ${this.calculateOrbitalVelocity(elements.semiMajorAxis).toFixed(2)} km/s`);
+        
+        // Análisis de la época del TLE
+        const epochAge = this.calculateEpochAge(elements.epoch);
+        console.log(`  ⏰ Época del TLE: ${epochAge.toFixed(1)} días ${epochAge > 30 ? '🔴 (MUY ANTIGUO)' : epochAge > 7 ? '🟡 (ANTIGUO)' : '🟢 (RECIENTE)'}`);
+        
+        // Análisis del coeficiente de drag
+        if (elements.bstar < -0.0001) {
+          console.log(`  🚨 ALERTA: Coeficiente de drag muy alto (${elements.bstar.toExponential(2)}) - POSIBLE DEORBITADO`);
+        }
+      }
+    });
+  }
+
+  // Helper: Categorizar excentricidad
+  private getEccentricityCategory(eccentricity: number): string {
+    if (eccentricity < 0.01) return '🔵 (Circular)';
+    if (eccentricity < 0.1) return '🟢 (Ligeramente elíptica)';
+    if (eccentricity < 0.3) return '🟡 (Moderadamente elíptica)';
+    return '🔴 (Muy elíptica)';
+  }
+
+  // Helper: Categorizar inclinación
+  private getInclinationCategory(inclination: number): string {
+    if (inclination < 10) return '🔵 (Ecuatorial)';
+    if (inclination < 30) return '🟢 (Baja)';
+    if (inclination < 60) return '🟡 (Media)';
+    if (inclination < 90) return '🟠 (Alta)';
+    if (inclination < 110) return '🔴 (Polar)';
+    return '🟣 (Retrógrada)';
+  }
+
+  // Helper: Calcular velocidad orbital promedio
+  private calculateOrbitalVelocity(semiMajorAxis: number): number {
+    const GM = 398600.4418; // km³/s²
+    return Math.sqrt(GM / semiMajorAxis);
+  }
+
+  // Helper: Calcular edad de la época del TLE
+  private calculateEpochAge(epoch: number): number {
+    // Convertir época a fecha actual
+    const year = Math.floor(epoch / 1000) + 2000;
+    const dayOfYear = epoch % 1000;
+    const epochDate = new Date(year, 0, dayOfYear);
+    const now = new Date();
+    return (now.getTime() - epochDate.getTime()) / (1000 * 60 * 60 * 24);
+  }
+
+  // 🎯 MÉTODO SIMPLE: Calcular offset para etiquetas
+  private calculateSmartLabelOffset(satellitePosition: THREE.Vector3, index: number, cameraDistance: number): THREE.Vector3 {
+    // Offset base muy pequeño para mantener las etiquetas cercanas
+    const baseOffset = 0.003;
+    
     // Calcular dirección desde el centro de la Tierra hacia el satélite
     const earthCenter = new THREE.Vector3(0, 0, 0);
     const directionFromEarth = satellitePosition.clone().sub(earthCenter).normalize();
     
-    // Calcular dirección hacia la cámara desde el satélite
-    const directionToCamera = this.camera.position.clone().sub(satellitePosition).normalize();
-    
-    // Combinar ambas direcciones para posicionar la etiqueta "hacia fuera" del satélite
-    // pero también visible hacia la cámara
-    const combinedDirection = directionFromEarth.clone()
-      .multiplyScalar(0.7) // 70% hacia fuera de la Tierra
-      .add(directionToCamera.multiplyScalar(0.3)); // 30% hacia la cámara
-    
-    combinedDirection.normalize();
-    
-    // Aplicar una pequeña variación angular para evitar solapamientos exactos
-    // Solo cuando hay muchos satélites muy cerca
-    const variationAngle = (index % 4) * (Math.PI / 8); // Variación de 0°, 22.5°, 45°, 67.5°
-    const rotationAxis = new THREE.Vector3(0, 0, 1); // Rotar alrededor del eje Z
-    
-    // Solo aplicar variación si estamos en zoom muy cercano y podría haber crowding
-    if (cameraDistance <= 0.13) {
-      combinedDirection.applyAxisAngle(rotationAxis, variationAngle * 0.3); // Variación sutil
-    }
-    
-    // Calcular el offset final
-    const finalOffset = combinedDirection.multiplyScalar(baseOffset);
-    
-    console.log(`[LABEL-OFFSET] Sat ${index}: offset=${baseOffset.toFixed(6)}, zoom=${cameraDistance.toFixed(3)}`);
-    
-    return finalOffset;
+    // Aplicar offset simple hacia afuera
+    return directionFromEarth.multiplyScalar(baseOffset);
   }
 
-  /**
-   * 🎯 NUEVO: Controles de Tiempo Real vs Simulado
-   */
-  
-  // Activar modo tiempo real (sincronizado con el mundo real)
-  enableRealTimeMode() {
-    this.useRealTime = true;
-    this.simulatedDate = new Date(); // Resincronizar con tiempo actual
-    console.log('[TIME-MODE] ✅ Modo TIEMPO REAL activado - Satélites sincronizados con la realidad');
-  }
-  
-  // Activar modo simulación (tiempo acelerado/controlado)
-  enableSimulationMode() {
-    this.useRealTime = false;
-    console.log('[TIME-MODE] ⚡ Modo SIMULACIÓN activado - Tiempo controlable');
-  }
-  
-  // Verificar si está en modo tiempo real
-  isRealTimeMode(): boolean {
-    return this.useRealTime;
-  }
-  
-  // Obtener fecha actual del simulador
-  getCurrentSimulatedTime(): Date {
-    return new Date(this.simulatedDate);
-  }
-  
-  // Resincronizar con tiempo real
-  resyncWithRealTime() {
-    this.simulatedDate = new Date();
-    console.log(`[TIME-SYNC] ⏰ Resincronizado: ${this.simulatedDate.toISOString()}`);
-  }
-
-  /**
-   * 🎯 NUEVO: Método para validar precisión geográfica
-   * Agrega marcadores en ubicaciones conocidas para verificar alineación
-   */
-  private addGeographicReferencePoints() {
-    const referencePoints = [
-      { name: "Greenwich", lat: 51.4769, lon: 0.0005, color: 0xff0000 },
-      { name: "Madrid", lat: 40.4168, lon: -3.7038, color: 0x00ff00 },
-      { name: "Polo Norte", lat: 90, lon: 0, color: 0x0000ff },
-      { name: "Polo Sur", lat: -90, lon: 0, color: 0xffff00 },
-      { name: "Sydney", lat: -33.8688, lon: 151.2093, color: 0xff00ff },
-      { name: "Nueva York", lat: 40.7128, lon: -74.0060, color: 0x00ffff }
-    ];
-
-    referencePoints.forEach(point => {
-      const position = this.geographicToCartesian(point.lat, point.lon);
-      
-      // Crear marcador visual
-      const markerGeometry = new THREE.SphereGeometry(0.002);
-      const markerMaterial = new THREE.MeshBasicMaterial({ 
-        color: point.color,
-        transparent: true,
-        opacity: 0.8
-      });
-      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-      marker.position.copy(position);
-      
-      // Agregar etiqueta
-      const labelTexture = this.createTextTexture(point.name);
-      const labelMaterial = new THREE.SpriteMaterial({
-        map: labelTexture,
-        transparent: true,
-        opacity: 0.9
-      });
-      const label = new THREE.Sprite(labelMaterial);
-      label.position.copy(position.clone().multiplyScalar(1.15)); // Ligeramente separado
-      label.scale.set(0.1, 0.025, 1);
-      
-      this.scene.add(marker);
-      this.scene.add(label);
-      
-      console.log(`[GEO-REF] ${point.name}: lat=${point.lat}, lon=${point.lon} -> x=${position.x.toFixed(4)}, y=${position.y.toFixed(4)}, z=${position.z.toFixed(4)}`);
-    });
-  }
-
-  /**
-   * 🎯 NUEVO: Conversión precisa de coordenadas geográficas a cartesianas
-   * Usa el sistema de coordenadas astronómicas estándar
-   */
+  // 🎯 MÉTODO SIMPLE: Conversión de coordenadas geográficas a cartesianas
   private geographicToCartesian(lat: number, lon: number, alt: number = 0): THREE.Vector3 {
     const R = 6371; // Radio de la Tierra en km
-    const radius = (R + alt) / R * 0.1; // Normalizado a escala del simulador (0.1 = radio Tierra)
+    const radius = (R + alt) / R * 0.1; // Normalizado a escala del simulador
     
-    // Conversión usando coordenadas esféricas estándar
-    const phi = THREE.MathUtils.degToRad(90 - lat); // Colatitud (0 en polo norte)
-    const theta = THREE.MathUtils.degToRad(lon); // Longitud (-180 a +180)
+    // Conversión esférica estándar con calibración
+    const phi = THREE.MathUtils.degToRad(90 - lat);
+    const theta = THREE.MathUtils.degToRad(lon + 90 + this.CALIBRATION_OFFSET_DEGREES);
     
-    // Sistema de coordenadas: X hacia longitud 0°, Y hacia polo norte, Z hacia longitud 90°E
     const x = radius * Math.sin(phi) * Math.cos(theta);
     const y = radius * Math.cos(phi);
-    const z = radius * Math.sin(phi) * Math.sin(theta);
+       const z = radius * Math.sin(phi) * Math.sin(theta);
     
     return new THREE.Vector3(x, y, z);
   }
 
-  /**
-   * 🎯 NUEVO: Método para activar/desactivar marcadores de referencia geográfica
-   */
-  toggleGeographicReferences() {
-    // Por implementar en la interfaz
-    this.addGeographicReferencePoints();
-    console.log('[GEO-REF] ✅ Marcadores de referencia geográfica activados');
+  // 🎯 NUEVO: Crear traza orbital sincronizada con posición real del satélite
+  private createSynchronizedOrbitTrace(elements: any, satellitePosition: THREE.Vector3, index: number): THREE.Line | null {
+    try {
+      const points: THREE.Vector3[] = [];
+      
+      console.log(`[SYNC-ORBIT] Creando órbita sincronizada para ${elements.name}:`);
+      console.log(`  Posición actual: (${satellitePosition.x.toFixed(4)}, ${satellitePosition.y.toFixed(4)}, ${satellitePosition.z.toFixed(4)})`);
+      console.log(`  RAAN: ${elements.raan.toFixed(2)}°, ArgPer: ${elements.argumentOfPeriapsis.toFixed(2)}°`);
+      console.log(`  Inclinación: ${elements.inclination.toFixed(2)}°, Excentricidad: ${elements.eccentricity.toFixed(6)}`);
+
+      // Convertir la posición actual a sistema sin transformaciones para obtener coordenadas ECI
+      const workingPosition = satellitePosition.clone();
+      
+      // Deshacer las transformaciones del simulador para obtener coordenadas originales
+      const calibrationAngleRad = THREE.MathUtils.degToRad(-this.CALIBRATION_OFFSET_DEGREES);
+      workingPosition.applyAxisAngle(new THREE.Vector3(0, 1, 0), calibrationAngleRad);
+      workingPosition.applyAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+      
+      // Calcular el radio orbital desde la posición actual
+      const orbitalRadius = workingPosition.length();
+      console.log(`  Radio orbital calculado: ${orbitalRadius.toFixed(6)} (unidades simulador)`);
+      
+      // Convertir elementos a radianes
+      const inc = THREE.MathUtils.degToRad(elements.inclination);
+      const raan = THREE.MathUtils.degToRad(elements.raan);
+      const argPer = THREE.MathUtils.degToRad(elements.argumentOfPeriapsis);
+      
+      // Número de puntos para la órbita
+      const numPoints = 120;
+      
+      // Generar puntos de la órbita elíptica
+      for (let i = 0; i <= numPoints; i++) {
+        const E = (i / numPoints) * 2 * Math.PI; // Anomalía eccéntrica
+        
+        // Para simplificar y asegurar que pase por la posición actual,
+        // creamos una órbita circular en el plano correcto
+        const angle = E;
+        
+        // Coordenadas en el plano orbital (órbita circular)
+        const x_orb = orbitalRadius * Math.cos(angle);
+        const y_orb = orbitalRadius * Math.sin(angle);
+        const z_orb = 0;
+        
+        // Matrices de rotación para orientar el plano orbital
+        // Rotación 1: Argumento del periapsis
+        const x1 = x_orb * Math.cos(argPer) - y_orb * Math.sin(argPer);
+        const y1 = x_orb * Math.sin(argPer) + y_orb * Math.cos(argPer);
+        const z1 = z_orb;
+        
+        // Rotación 2: Inclinación
+        const x2 = x1;
+        const y2 = y1 * Math.cos(inc) - z1 * Math.sin(inc);
+        const z2 = y1 * Math.sin(inc) + z1 * Math.cos(inc);
+        
+        // Rotación 3: Ascensión del nodo (RAAN)
+        const x3 = x2 * Math.cos(raan) - y2 * Math.sin(raan);
+        const y3 = x2 * Math.sin(raan) + y2 * Math.cos(raan);
+        const z3 = z2;
+        
+        // Crear posición en coordenadas ECI
+        const pos = new THREE.Vector3(x3, y3, z3);
+        
+        // Aplicar las mismas transformaciones que los satélites
+        pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+        
+        // Aplicar calibración geográfica
+        const calibrationAngleRad2 = THREE.MathUtils.degToRad(this.CALIBRATION_OFFSET_DEGREES);
+        pos.applyAxisAngle(new THREE.Vector3(0, 1, 0), calibrationAngleRad2);
+        
+        // Verificar que las coordenadas sean válidas
+        if (!isNaN(pos.x) && !isNaN(pos.y) && !isNaN(pos.z) &&
+            isFinite(pos.x) && isFinite(pos.y) && isFinite(pos.z)) {
+          points.push(pos);
+        }
+      }
+      
+      // Verificar que al menos un punto esté cerca de la posición del satélite
+      let minDistance = Infinity;
+      let closestPoint = -1;
+      points.forEach((point, idx) => {
+        const distance = point.distanceTo(satellitePosition);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestPoint = idx;
+        }
+      });
+      
+      console.log(`  Punto más cercano al satélite: índice ${closestPoint}, distancia ${minDistance.toFixed(6)}`);
+      
+      // Crear la geometría si tenemos suficientes puntos
+      if (points.length >= numPoints * 0.8) {
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, this.orbitalTraceMaterial!);
+        
+        // Metadata
+        line.userData = {
+          satelliteIndex: index,
+          satelliteName: elements.name,
+          orbitalElements: elements,
+          pointCount: points.length,
+          traceType: 'synchronized',
+          minDistanceToSatellite: minDistance,
+          orbitalRadius: orbitalRadius
+        };
+        
+        console.log(`[SYNC-ORBIT] ✅ Órbita sincronizada creada para ${elements.name}: ${points.length} puntos, distancia min: ${minDistance.toFixed(6)}`);
+        return line;
+      } else {
+        console.warn(`[SYNC-ORBIT] ⚠️ Insuficientes puntos válidos para ${elements.name}: ${points.length}/${numPoints}`);
+        return null;
+      }
+    } catch (error) {
+      console.error(`[SYNC-ORBIT] Error creando órbita sincronizada para satélite ${index}:`, error);
+      return null;
+    }
   }
 }

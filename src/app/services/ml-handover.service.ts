@@ -30,6 +30,15 @@ export class MLHandoverService {
     uePos: THREE.Vector3,
     satsPos: THREE.Vector3[]
   ): Decision {
+    // 🎯 DESHABILITADO: Sistema de handover para mantener visualización limpia
+    // Siempre retornar que no hay handover
+    return { 
+      shouldHandover: false, 
+      targetIndex: null,
+      metrics: undefined 
+    };
+
+    /* CÓDIGO ORIGINAL COMENTADO PARA PRESERVAR:
     const now = Date.now();
     const metrics = satsPos.map((pos, i) => this.computeMetrics(uePos, pos, i));
     
@@ -70,6 +79,7 @@ export class MLHandoverService {
       targetIndex: shouldHandover ? bestIdx : this.lastIndex,
       metrics: bestMetrics
     };
+    */
   }
 
   private computeElevation(ue: THREE.Vector3, sat: THREE.Vector3) {

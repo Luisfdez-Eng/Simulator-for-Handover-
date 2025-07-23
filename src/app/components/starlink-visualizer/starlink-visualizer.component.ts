@@ -84,7 +84,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   ];
 
   // 🎯 NUEVO: Sistema de calibración manual empírica
-  private readonly CALIBRATION_OFFSET_DEGREES = -103; // 🎯 CALIBRADO: Ajustado para STARLINK-30354 (real: 37.32°E vs simulador: Australia ~140°E)
+  private readonly CALIBRATION_OFFSET_DEGREES = 0; // 🎯 ELIMINADO: Ya no necesario con coordenadas corregidas
   private referencePointsMesh: THREE.Group | null = null;
 
   // 🎯 NUEVO: Sistema de corrección temporal para velocidades orbitales
@@ -147,6 +147,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // console.log('[ORBITAL-TRACES] Para recrear trazas: starlinkVisualizer.recreateOrbitalTraces()');
     // console.log('[ORBITAL-TRACES] Para info de trazas: starlinkVisualizer.getOrbitalTracesInfo()');
     console.log('[DEBUG] Para diagnóstico TLE: starlinkVisualizer.debugTLEPropagation()');
+    console.log('[LONGITUDE-FIX] 🔧 NUEVO: Para probar corrección de longitudes: starlinkVisualizer.testLongitudeCorrection()');
+    console.log('[LONGITUDE-FIX] 🔧 NUEVO: Para probar sin calibración: starlinkVisualizer.testWithoutCalibration()');
+    console.log('[EARTH-ALIGN] 🌍 NUEVO: Para alinear textura: starlinkVisualizer.alignEarthTexture()');
+    console.log('[EARTH-ALIGN] 🌍 NUEVO: Para corregir con rotación: starlinkVisualizer.fixLongitudesWithEarthRotation()');
+    console.log('[DEEP-ANALYSIS] 🔬 NUEVO: Análisis profundo: starlinkVisualizer.deepCoordinateAnalysis()');
+    console.log('[FORMULA-CHECK] 🧮 NUEVO: Verificar fórmula: starlinkVisualizer.verifyCoordinateFormula()');
+    console.log('[FINAL-TEST] 🎯 NUEVO: Prueba final corregida: starlinkVisualizer.testFinalCorrection()');
     this.animate();
   }
 
@@ -1741,20 +1748,20 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     }
   }
 
-  // 🎯 MÉTODO SIMPLE: Conversión de coordenadas geográficas ESTÁNDAR (sin offsets)
+  // 🎯 MÉTODO SIMPLE: Conversión de coordenadas geográficas CORREGIDA
   private geographicToCartesian(lat: number, lon: number, alt: number = 0): THREE.Vector3 {
     const R = 6371; // Radio de la Tierra en km
     const radius = (R + alt) / R * 0.1; // Normalizado a escala del simulador
     
-    // 🎯 NUEVO: Conversión esférica estándar SIN calibración artificial
+    // 🚨 CORRECCIÓN FINAL: Intercambiar X y Z para alinear con textura Three.js
     // Coordenadas esféricas estándar: lat/lon -> x,y,z
     const phi = THREE.MathUtils.degToRad(90 - lat);   // Colatitud (0 = polo norte, 90 = ecuador)
-    const theta = THREE.MathUtils.degToRad(lon);      // Longitud (0 = Greenwich, + hacia este)
+    const theta = THREE.MathUtils.degToRad(lon + 90);      // Longitud (0 = Greenwich, + hacia este)
     
-    // Conversión estándar esférica a cartesiana
-    const x = radius * Math.sin(phi) * Math.cos(theta);
-    const y = radius * Math.cos(phi);                 // Y hacia arriba (polo norte)
-    const z = radius * Math.sin(phi) * Math.sin(theta);
+    // ✅ FÓRMULA CORREGIDA: Intercambio X ↔ Z para alinear correctamente
+    const x = radius * Math.sin(phi) * Math.sin(theta);   // X = sin(theta) para longitudes correctas
+    const y = radius * Math.cos(phi);                     // Y hacia arriba (polo norte) 
+    const z = radius * Math.sin(phi) * Math.cos(theta);   // Z = cos(theta) para profundidad correcta
     
     return new THREE.Vector3(x, y, z);
   }
@@ -1874,5 +1881,339 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       console.error(`[SYNC-ORBIT] Error creando órbita sincronizada para satélite ${index}:`, error);
       return null;
     }
+  }
+
+  // 🎯 MÉTODO DE VERIFICACIÓN: Probar corrección de longitudes
+  public testLongitudeCorrection(): void {
+    console.log('[LONGITUDE-FIX] 🔧 Analizando problema de longitudes...');
+    
+    // PASO 1: Verificar conversión base (sin calibración)
+    console.log('[LONGITUDE-FIX] 📍 PASO 1: Conversión base (sin calibración):');
+    const testCases = [
+      { name: 'Greenwich', lat: 51.4769, lon: 0 },           // Longitud 0° (referencia)
+      { name: 'Sydney', lat: -33.8688, lon: 151.2093 },     // Este positivo
+      { name: 'Nueva York', lat: 40.7128, lon: -74.0060 },  // Oeste negativo
+      { name: 'Meridiano 90°E', lat: 0, lon: 90 },          // Este exacto
+      { name: 'Meridiano 90°W', lat: 0, lon: -90 }          // Oeste exacto
+    ];
+    
+    testCases.forEach(test => {
+      const pos = this.geographicToCartesian(test.lat, test.lon, 0);
+      console.log(`  ${test.name}: (${test.lat}°, ${test.lon}°) -> (${pos.x.toFixed(4)}, ${pos.y.toFixed(4)}, ${pos.z.toFixed(4)})`);
+    });
+    
+    // PASO 2: Verificar qué transformaciones se aplican en updateUserPosition()
+    console.log('[LONGITUDE-FIX] 📍 PASO 2: Analizando método updateUserPosition():');
+    
+    // Verificar el comportamiento actual
+    const sydneyLat = -33.8688;
+    const sydneyLonCorrect = 151.2093;  // Coordenada CORRECTA
+    const sydneyLonIncorrect = -151.2093; // Coordenada que funciona (INCORRECTA)
+    
+    const posCorrect = this.geographicToCartesian(sydneyLat, sydneyLonCorrect, 0);
+    const posIncorrect = this.geographicToCartesian(sydneyLat, sydneyLonIncorrect, 0);
+    
+    console.log(`  Sydney CORRECTO (${sydneyLat}°, ${sydneyLonCorrect}°):`);
+    console.log(`    Posición calculada: (${posCorrect.x.toFixed(4)}, ${posCorrect.y.toFixed(4)}, ${posCorrect.z.toFixed(4)})`);
+    
+    console.log(`  Sydney INCORRECTO (${sydneyLat}°, ${sydneyLonIncorrect}°):`);
+    console.log(`    Posición calculada: (${posIncorrect.x.toFixed(4)}, ${posIncorrect.y.toFixed(4)}, ${posIncorrect.z.toFixed(4)})`);
+    
+    // PASO 3: Verificar el offset de calibración
+    console.log('[LONGITUDE-FIX] 📍 PASO 3: Verificando offset de calibración:');
+    console.log(`  CALIBRATION_OFFSET_DEGREES actual: ${this.CALIBRATION_OFFSET_DEGREES}°`);
+    
+    // PASO 4: Prueba práctica
+    console.log('[LONGITUDE-FIX] 📍 PASO 4: Probando ambas versiones...');
+    console.log('  Probando Sydney con longitud CORRECTA (+151.2093°):');
+    this.moveUETo(sydneyLat, sydneyLonCorrect);
+    
+    setTimeout(() => {
+      console.log('  En 5 segundos, probaré Sydney con longitud INCORRECTA (-151.2093°):');
+      setTimeout(() => {
+        this.moveUETo(sydneyLat, sydneyLonIncorrect);
+        console.log('[LONGITUDE-FIX] ✅ Compara las dos posiciones para identificar el problema');
+      }, 5000);
+    }, 1000);
+    
+    // PASO 5: Verificar si el problema está en la calibración
+    console.log('[LONGITUDE-FIX] 💡 HIPÓTESIS: El problema puede estar en:');
+    console.log('  1. El offset de calibración (-103°) está invirtiendo el sistema');
+    console.log('  2. La textura de la Tierra está orientada incorrectamente');
+    console.log('  3. Hay una transformación adicional que no vemos');
+    console.log('[LONGITUDE-FIX] � Para probar sin calibración temporal: starlinkVisualizer.testWithoutCalibration()');
+  }
+  
+  // 🎯 NUEVO: Método para probar sin calibración temporal
+  public testWithoutCalibration(): void {
+    console.log('[NO-CALIB] 🔧 Probando posiciones SIN calibración temporal...');
+    
+    // Temporalmente desactivar la calibración guardando el valor original
+    const originalOffset = this.CALIBRATION_OFFSET_DEGREES;
+    (this as any).CALIBRATION_OFFSET_DEGREES = 0; // Hack temporal
+    
+    console.log('[NO-CALIB] Calibración temporalmente desactivada (0°)');
+    
+    // Probar Sydney
+    console.log('[NO-CALIB] Probando Sydney sin calibración:');
+    this.moveUETo(-33.8688, 151.2093);
+    
+    // Restaurar calibración después de 3 segundos
+    setTimeout(() => {
+      (this as any).CALIBRATION_OFFSET_DEGREES = originalOffset;
+      console.log(`[NO-CALIB] Calibración restaurada (${originalOffset}°)`);
+    }, 3000);
+  }
+
+  // 🎯 NUEVA SOLUCIÓN: Ajustar la rotación visual de la Tierra para alinear con coordenadas
+  public alignEarthTexture(): void {
+    console.log('[EARTH-ALIGN] 🌍 Iniciando alineación de textura con coordenadas...');
+    
+    // Probar diferentes rotaciones de la Tierra hasta encontrar la correcta
+    const testRotations = [
+      { name: 'Original (0°, 0°, 0°)', x: 0, y: 0, z: 0 },
+      { name: 'Rotación Y 90°', x: 0, y: 90, z: 0 },
+      { name: 'Rotación Y 180°', x: 0, y: 180, z: 0 },
+      { name: 'Rotación Y 270°', x: 0, y: 270, z: 0 },
+      { name: 'Rotación Y -90°', x: 0, y: -90, z: 0 },
+      { name: 'Compensación visual', x: 0, y: 103, z: 0 }, // Compensar el offset
+    ];
+    
+    let currentTest = 0;
+    
+    const testNextRotation = () => {
+      if (currentTest >= testRotations.length) {
+        console.log('[EARTH-ALIGN] ✅ Pruebas completadas. Usa la rotación que coincida visualmente.');
+        return;
+      }
+      
+      const rotation = testRotations[currentTest];
+      console.log(`[EARTH-ALIGN] Probando: ${rotation.name}`);
+      
+      // Aplicar rotación
+      this.rotateEarth(rotation.x, rotation.y, rotation.z);
+      
+      // Mover UE a Sydney para verificación
+      this.moveUETo(-33.8688, 151.2093);
+      
+      console.log(`[EARTH-ALIGN] 📍 UE en Sydney. ¿Está en Australia visualmente? Próxima prueba en 4 segundos...`);
+      
+      currentTest++;
+      setTimeout(testNextRotation, 4000);
+    };
+    
+    testNextRotation();
+  }
+
+  // 🎯 MÉTODO ESPECÍFICO: Corregir longitudes con rotación de Tierra
+  public fixLongitudesWithEarthRotation(): void {
+    console.log('[LONGITUDE-EARTH-FIX] 🔧 Corrigiendo longitudes ajustando rotación de la Tierra...');
+    
+    // HIPÓTESIS: Si la textura está rotada ~103° (nuestro offset), 
+    // entonces rotarla -103° debería alinearla correctamente
+    const correctionAngle = -this.CALIBRATION_OFFSET_DEGREES; // +103°
+    
+    console.log(`[LONGITUDE-EARTH-FIX] Aplicando rotación Y de ${correctionAngle}° para compensar offset`);
+    
+    // Rotar la Tierra para compensar el desalineamiento
+    this.rotateEarth(0, correctionAngle, 0);
+    
+    // Probar Sydney
+    console.log('[LONGITUDE-EARTH-FIX] Probando Sydney con corrección aplicada:');
+    this.moveUETo(-33.8688, 151.2093);
+    
+    console.log('[LONGITUDE-EARTH-FIX] ✅ UE debería estar ahora en Australia visualmente.');
+    console.log('[LONGITUDE-EARTH-FIX] 💡 Si funciona, esto confirma que el problema era la orientación de la textura.');
+  }
+
+  // 🎯 NUEVO DIAGNÓSTICO: Análisis profundo del problema de coordenadas
+  public deepCoordinateAnalysis(): void {
+    console.log('[DEEP-ANALYSIS] 🔬 Iniciando análisis profundo del sistema de coordenadas...');
+    
+    // Puntos de prueba distribuidos globalmente
+    const testPoints = [
+      { name: "Greenwich", lat: 51.4769, lon: 0, continent: "Europa" },
+      { name: "Sydney", lat: -33.8688, lon: 151.2093, continent: "Australia" },
+      { name: "Madrid", lat: 40.4168, lon: -3.7038, continent: "Europa" },
+      { name: "Nueva York", lat: 40.7128, lon: -74.0060, continent: "N.América" },
+      { name: "Tokyo", lat: 35.6762, lon: 139.6503, continent: "Asia" },
+      { name: "São Paulo", lat: -23.5505, lon: -46.6333, continent: "S.América" },
+      { name: "Cairo", lat: 30.0444, lon: 31.2357, continent: "África" },
+      { name: "Mumbai", lat: 19.0760, lon: 72.8777, continent: "Asia" }
+    ];
+    
+    console.log('[DEEP-ANALYSIS] 📍 PASO 1: Calculando todas las posiciones:');
+    const positions = testPoints.map(point => {
+      const pos = this.geographicToCartesian(point.lat, point.lon, 0);
+      console.log(`  ${point.name} (${point.continent}): (${pos.x.toFixed(4)}, ${pos.y.toFixed(4)}, ${pos.z.toFixed(4)})`);
+      return { ...point, pos };
+    });
+    
+    console.log('[DEEP-ANALYSIS] 📍 PASO 2: Probando rotación de Sydney (58°):');
+    this.rotateEarth(0, 58, 0);
+    
+    // Mover UE a cada punto y verificar visualmente
+    let currentIndex = 0;
+    const testNextPoint = () => {
+      if (currentIndex >= positions.length) {
+        console.log('[DEEP-ANALYSIS] ✅ Análisis completado.');
+        console.log('[DEEP-ANALYSIS] 🔍 Compara las posiciones calculadas vs. las observadas visualmente.');
+        console.log('[DEEP-ANALYSIS] 💡 Si hay desalineación sistemática, el problema está en la fórmula de conversión.');
+        return;
+      }
+      
+      const point = positions[currentIndex];
+      console.log(`[DEEP-ANALYSIS] Probando ${point.name} (${point.continent}):`)
+      console.log(`  Coordenadas: ${point.lat}°, ${point.lon}°`);
+      console.log(`  Calculado: (${point.pos.x.toFixed(4)}, ${point.pos.y.toFixed(4)}, ${point.pos.z.toFixed(4)})`);
+      
+      this.moveUETo(point.lat, point.lon);
+      
+      console.log(`  📍 ¿Está el UE en ${point.continent} visualmente? Próximo en 3 segundos...`);
+      
+      currentIndex++;
+      setTimeout(testNextPoint, 3000);
+    };
+    
+    testNextPoint();
+  }
+
+  // 🎯 NUEVO: Verificar si el problema está en la fórmula matemática
+  public verifyCoordinateFormula(): void {
+    console.log('[FORMULA-CHECK] 🧮 Verificando fórmula de conversión matemática...');
+    
+    // Resetear la Tierra a su posición original
+    this.rotateEarth(0, 0, 0);
+    
+    // Casos de prueba matemáticos conocidos
+    const mathTests = [
+      { 
+        name: "Punto X+ (0°, 0°)", 
+        lat: 0, lon: 0, 
+        expected: { x: 0.1, y: 0, z: 0 },
+        description: "Debería estar en X positivo puro"
+      },
+      { 
+        name: "Punto Z+ (0°, 90°)", 
+        lat: 0, lon: 90, 
+        expected: { x: 0, y: 0, z: 0.1 },
+        description: "Debería estar en Z positivo puro"
+      },
+      { 
+        name: "Punto X- (0°, 180°)", 
+        lat: 0, lon: 180, 
+        expected: { x: -0.1, y: 0, z: 0 },
+        description: "Debería estar en X negativo puro"
+      },
+      { 
+        name: "Punto Z- (0°, -90°)", 
+        lat: 0, lon: -90, 
+        expected: { x: 0, y: 0, z: -0.1 },
+        description: "Debería estar en Z negativo puro"
+      },
+      { 
+        name: "Polo Norte (90°, 0°)", 
+        lat: 90, lon: 0, 
+        expected: { x: 0, y: 0.1, z: 0 },
+        description: "Debería estar en Y positivo puro"
+      }
+    ];
+    
+    console.log('[FORMULA-CHECK] 📐 Verificando casos matemáticos ideales:');
+    
+    mathTests.forEach(test => {
+      const calculated = this.geographicToCartesian(test.lat, test.lon, 0);
+      const errorX = Math.abs(calculated.x - test.expected.x);
+      const errorY = Math.abs(calculated.y - test.expected.y);
+      const errorZ = Math.abs(calculated.z - test.expected.z);
+      const totalError = errorX + errorY + errorZ;
+      
+      console.log(`\n  ${test.name}:`);
+      console.log(`    Esperado: (${test.expected.x.toFixed(3)}, ${test.expected.y.toFixed(3)}, ${test.expected.z.toFixed(3)})`);
+      console.log(`    Calculado: (${calculated.x.toFixed(3)}, ${calculated.y.toFixed(3)}, ${calculated.z.toFixed(3)})`);
+      console.log(`    Error: ${totalError.toFixed(6)} ${totalError < 0.001 ? '✅' : '❌'}`);
+      console.log(`    ${test.description}`);
+      
+      // Mover UE para verificación visual
+      this.moveUETo(test.lat, test.lon);
+    });
+    
+    console.log('\n[FORMULA-CHECK] 💡 Si los errores son grandes, la fórmula de conversión es incorrecta.');
+    console.log('[FORMULA-CHECK] 💡 Si los errores son pequeños, el problema está en la orientación de la textura.');
+  }
+
+  // 🎯 MÉTODO FINAL: Verificar corrección definitiva
+  public testFinalCorrection(): void {
+    console.log('[FINAL-TEST] 🎯 Probando corrección definitiva de coordenadas...');
+    
+    // Resetear Tierra a posición original
+    this.rotateEarth(0, 0, 0);
+    
+    console.log('[FINAL-TEST] ✅ Tierra reseteada. Probando coordenadas corregidas:');
+    
+    // Casos de prueba críticos que anteriormente fallaban
+    const criticalTests = [
+      { 
+        name: "Sydney, Australia", 
+        lat: -33.8688, 
+        lon: 151.2093, 
+        expected: "Debería estar en Australia (hemisferio sur, este de Asia)"
+      },
+      { 
+        name: "Madrid, España", 
+        lat: 40.4168, 
+        lon: -3.7038, 
+        expected: "Debería estar en España (Europa occidental)"
+      },
+      { 
+        name: "Mumbai, India", 
+        lat: 19.0760, 
+        lon: 72.8777, 
+        expected: "Debería estar en India (Asia, ESTE de Europa)"
+      },
+      { 
+        name: "Nueva York, EEUU", 
+        lat: 40.7128, 
+        lon: -74.0060, 
+        expected: "Debería estar en costa este de EEUU"
+      },
+      { 
+        name: "Tokyo, Japón", 
+        lat: 35.6762, 
+        lon: 139.6503, 
+        expected: "Debería estar en Japón (extremo este de Asia)"
+      }
+    ];
+    
+    let currentTest = 0;
+    
+    const runNextTest = () => {
+      if (currentTest >= criticalTests.length) {
+        console.log('[FINAL-TEST] 🎉 PRUEBAS COMPLETADAS.');
+        console.log('[FINAL-TEST] 💡 Si todas las ubicaciones están correctas, ¡el problema está SOLUCIONADO!');
+        console.log('[FINAL-TEST] 💡 Si aún hay errores, reporta qué ubicaciones siguen incorrectas.');
+        return;
+      }
+      
+      const test = criticalTests[currentTest];
+      
+      console.log(`\n[FINAL-TEST] === PRUEBA ${currentTest + 1}/5: ${test.name} ===`);
+      console.log(`[FINAL-TEST] Coordenadas: ${test.lat}°, ${test.lon}°`);
+      console.log(`[FINAL-TEST] Expectativa: ${test.expected}`);
+      
+      // Calcular y mostrar posición
+      const pos = this.geographicToCartesian(test.lat, test.lon, 0);
+      console.log(`[FINAL-TEST] Posición calculada: (${pos.x.toFixed(4)}, ${pos.y.toFixed(4)}, ${pos.z.toFixed(4)})`);
+      
+      // Mover UE
+      this.moveUETo(test.lat, test.lon);
+      
+      console.log(`[FINAL-TEST] 📍 UE movido. ¿Coincide con la expectativa? Próxima prueba en 4 segundos...`);
+      
+      currentTest++;
+      setTimeout(runNextTest, 4000);
+    };
+    
+    runNextTest();
   }
 }

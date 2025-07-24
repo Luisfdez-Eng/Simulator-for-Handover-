@@ -72,17 +72,6 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private canvas2D!: HTMLCanvasElement;
   private context2D!: CanvasRenderingContext2D;
 
-  // 🌍 PUNTOS DE REFERENCIA PARA VALIDACIÓN DE CALIBRACIÓN
-  private readonly REFERENCE_POINTS = [
-    { name: "Greenwich Observatory", lat: 51.4769, lon: 0.0005, color: 0xff0000 },
-    { name: "Polo Norte", lat: 90, lon: 0, color: 0x00ff00 },
-    { name: "Polo Sur", lat: -90, lon: 0, color: 0x0000ff },
-    { name: "Línea Internacional de Fecha", lat: 0, lon: 180, color: 0xffff00 },
-    { name: "Meridiano 90°E (Índico)", lat: 0, lon: 90, color: 0xff00ff },
-    { name: "Meridiano 90°W (Pacífico)", lat: 0, lon: -90, color: 0x00ffff },
-    { name: "Ecuador - 0°", lat: 0, lon: 0, color: 0xffffff }
-  ];
-
 
   // 🎯 NUEVO: Sistema de corrección temporal para velocidades orbitales
   private orbitalTimeCorrection = 1.0; // Factor de corrección temporal (1.0 = sin corrección)
@@ -104,7 +93,6 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.initThree();
     this.initializeLabelSystem();
     this.createEarth();
-    this.createReferencePoints(); // 🎯 IMPLEMENTADO: Puntos de referencia para calibración
     this.createSatellites();
     this.createUE();
     this.animate();
@@ -151,17 +139,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     });
   }
 
-  /*
-  // Calcula el ángulo de rotación de la Tierra (Greenwich) en radianes para la fecha simulada
-  private getEarthRotationAngle(date: Date): number {
-    // Referencia: J2000 = 2000-01-01T12:00:00Z
-    const J2000 = Date.UTC(2000, 0, 1, 12, 0, 0, 0);
-    const msSinceJ2000 = date.getTime() - J2000;
-    const days = msSinceJ2000 / 86400000;
-    // Ángulo de Greenwich en horas (GMST)
-    const GMST = (18.697374558 + 24.06570982441908 * days) % 24;
-    return (GMST / 24) * 2 * Math.PI;
-  }*/
+
   private updateCameraControls() {
     const distance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
     const wasDetailedView = this.isDetailedView;
@@ -197,12 +175,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (distance < this.DETAIL_ZOOM_THRESHOLD && distance >= MIN_DISTANCE) {
       // Sensibilidad inversamente proporcional a qué tan cerca estemos
       const proximityFactor = distance / this.DETAIL_ZOOM_THRESHOLD; // 0.8 a 1.0
-      
+
       // 🎯 AJUSTA AQUÍ: Rango de sensibilidad progresiva
       // Valores más bajos = más lento y preciso
       this.controls.rotateSpeed = Math.max(0.05, 0.12 * proximityFactor); // Era 0.08 y 0.15
       this.controls.zoomSpeed = Math.max(0.1, 0.2 * proximityFactor);     // Era 0.15 y 0.25
-      
+
       // Sensibilidad extra baja en zoom extremo para máxima precisión
       if (distance <= 0.125) {
         this.controls.rotateSpeed = 0.03; // 🎯 AJUSTA AQUÍ: SúPER lento (era 0.05)
@@ -237,13 +215,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private createTextTexture(text: string): THREE.Texture {
     // Canvas optimizado para texto nítido y limpio
     const canvas = document.createElement('canvas');
-    canvas.width = 512;  
+    canvas.width = 512;
     canvas.height = 128;
     const ctx = canvas.getContext('2d')!;
 
     // Configuración de máxima calidad
     ctx.imageSmoothingEnabled = false; // Desactivar para texto más nítido
-    
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Configurar fuente moderna y limpia
@@ -255,25 +233,25 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // Posición centrada
     const x = canvas.width / 2;
     const y = canvas.height / 2;
-    
+
     // Calcular dimensiones del texto para el fondo
     const metrics = ctx.measureText(text);
     const textWidth = metrics.width;
     const textHeight = fontSize;
-    
+
     // Padding para el fondo
     const padding = 8;
     const bgWidth = textWidth + padding * 2;
     const bgHeight = textHeight + padding * 2;
-    
+
     // Fondo semi-transparente oscuro con bordes redondeados
     ctx.fillStyle = 'rgba(20, 25, 35, 0.85)'; // Fondo oscuro semi-transparente
-    
+
     // Crear rectángulo con bordes redondeados manualmente
     const radius = 6;
-    const rectX = x - bgWidth/2;
-    const rectY = y - bgHeight/2;
-    
+    const rectX = x - bgWidth / 2;
+    const rectY = y - bgHeight / 2;
+
     ctx.beginPath();
     ctx.moveTo(rectX + radius, rectY);
     ctx.lineTo(rectX + bgWidth - radius, rectY);
@@ -286,7 +264,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
     ctx.closePath();
     ctx.fill();
-    
+
     // Texto principal blanco y nítido
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText(text, x, y);
@@ -297,7 +275,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     texture.magFilter = THREE.LinearFilter;
     texture.format = THREE.RGBAFormat;
     texture.needsUpdate = true;
-    
+
     return texture;
   }
 
@@ -324,11 +302,11 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // Radio de visibilidad más generoso basado en el zoom
     let visibilityRadius: number;
     let maxLabels: number;
-    
+
     if (cameraDistance <= 0.12) {
       // Zoom máximo - mostrar todos los satélites en un área pequeña
       visibilityRadius = 0.08;
-      maxLabels = 25;
+      maxLabels = 50;
     } else if (cameraDistance <= 0.15) {
       // Zoom alto - área moderada
       visibilityRadius = 0.12;
@@ -358,12 +336,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       // 1. Debe estar dentro del radio de visibilidad
       // 2. Debe estar fuera del núcleo de la Tierra (radio > 0.102) - 🎯 AJUSTADO para satélites más bajos
       // 3. Debe ser visible en pantalla (proyección)
-      if (distanceToCamera < visibilityRadius && distanceToCenter > 0.102) { // 🎯 REDUCIDO de 0.103 a 0.102
+      if (distanceToCamera < visibilityRadius && distanceToCenter > 0.102) { // 🎯 REDUCIDO para mostrar satélites más bajos
         // Verificar si es visible en pantalla usando proyección
         const screenPosition = position.clone().project(this.camera);
-        const isOnScreen = screenPosition.x >= -1.2 && screenPosition.x <= 1.2 && 
-                          screenPosition.y >= -1.2 && screenPosition.y <= 1.2 && 
-                          screenPosition.z >= -1 && screenPosition.z <= 1;
+        const isOnScreen = screenPosition.x >= -1.2 && screenPosition.x <= 1.2 &&
+          screenPosition.y >= -1.2 && screenPosition.y <= 1.2 &&
+          screenPosition.z >= -1 && screenPosition.z <= 1;
 
         if (isOnScreen) {
           candidateLabels.push({
@@ -392,7 +370,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private createSatelliteLabel(sat: any, position: THREE.Vector3, index: number, cameraDistance: number) {
     const satName = this.extractSatelliteName(sat, index);
     const texture = this.createTextTexture(satName);
-    
+
     const spriteMaterial = new THREE.SpriteMaterial({
       map: texture,
       transparent: true,
@@ -414,8 +392,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     const scaleFactor = this.calculateLabelScale(cameraDistance);
     sprite.scale.set(scaleFactor.x, scaleFactor.y, 1);
 
-    sprite.userData = { 
-      satIndex: index, 
+    sprite.userData = {
+      satIndex: index,
       satName: satName,
       satellitePosition: position.clone() // Guardamos la posición del satélite para referencia
     };
@@ -431,7 +409,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.satLabels.forEach((label, index) => {
       // Actualizar escala
       label.scale.set(scaleFactor.x, scaleFactor.y, 1);
-      
+
       // 🎯 NUEVO: También actualizar posición para mantener proximidad
       if (label.userData && label.userData['satellitePosition']) {
         const satellitePosition = label.userData['satellitePosition'] as THREE.Vector3;
@@ -454,7 +432,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
   private async createEarth() {
     const geo = new THREE.SphereGeometry(0.1, 64, 64); // 🎯 Resolución alta para suavidad
-    
+
     // � NASA BLUE MARBLE: Textura profesional con calibración astronómica
     const loader = new THREE.TextureLoader();
     this.earthTexture = await new Promise<THREE.Texture>((resolve, reject) => {
@@ -470,15 +448,15 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         (error) => {
           console.error('[EARTH] Error cargando Blue Marble NASA:', error);
           // Fallback a texturas de respaldo en orden de preferencia
-          loader.load('assets/earth_4k_hd.jpg', 
-            resolve, 
-            undefined, 
+          loader.load('assets/earth_4k_hd.jpg',
+            resolve,
+            undefined,
             () => loader.load('assets/earth_continents_bw.png', resolve, undefined, reject)
           );
         }
       );
     });
-    
+
     // 🎯 CONFIGURACIÓN OPTIMIZADA PARA PROYECCIÓN EQUIRECTANGULAR NASA
     this.earthTexture.wrapS = THREE.ClampToEdgeWrapping; // Sin repetición horizontal
     this.earthTexture.wrapT = THREE.ClampToEdgeWrapping; // Sin repetición vertical
@@ -488,9 +466,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.earthTexture.flipY = true; // 🎯 CORREGIDO: Blue Marble NASA SÍ necesita flip para orientación correcta
     this.earthTexture.encoding = THREE.sRGBEncoding; // 🎯 NUEVO: Encoding correcto para colores naturales
     this.earthTexture.anisotropy = this.renderer.capabilities.getMaxAnisotropy(); // 🎯 NUEVO: Filtrado anisotrópico máximo
-    
+
     console.log(`[EARTH] 🎯 Filtrado anisotrópico activado: ${this.earthTexture.anisotropy}x para máxima nitidez en zoom`);
-    
+
     // 🎯 MATERIAL MEJORADO con configuración astronómica
     const mat = new THREE.MeshBasicMaterial({
       map: this.earthTexture,
@@ -498,15 +476,15 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       opacity: 1.0,
       side: THREE.FrontSide // Solo cara frontal para mejor rendimiento
     });
-    
+
     this.earthMesh = new THREE.Mesh(geo, mat);
-    
+
     // 🎯 PASO 2: Eliminar rotaciones forzadas - Orientación natural de la Tierra
     // Sin rotaciones iniciales para ver la orientación base de la textura
-    this.earthMesh.rotation.x = 0; 
-    this.earthMesh.rotation.y = 0; 
-    this.earthMesh.rotation.z = 0; 
-    
+    this.earthMesh.rotation.x = 0;
+    this.earthMesh.rotation.y = 0;
+    this.earthMesh.rotation.z = 0;
+
     this.scene.add(this.earthMesh);
     // Wireframe moderno
     const wireframe = new THREE.WireframeGeometry(geo);
@@ -561,37 +539,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.scene.add(this.earthGrid);
 
   }
-  private createReferencePoints() {
-    console.log('[REFERENCE-POINTS] 📍 Creando puntos de referencia geográficos...');
-        
-    // Crear cada punto de referencia
-    this.REFERENCE_POINTS.forEach((point, index) => {
-      // Convertir coordenadas geográficas a cartesianas usando nuestro método actual
-      const position = this.geographicToCartesian(point.lat, point.lon, 5); // 5km de altura para que se vean
-      
-      // Crear geometría para el punto (esfera más grande que los satélites)
-      const geometry = new THREE.SphereGeometry(0.002); // Más grande que satélites
-      const material = new THREE.MeshBasicMaterial({ 
-        color: point.color,
-        transparent: false
-      });
-      
-      const pointMesh = new THREE.Mesh(geometry, material);
-      pointMesh.position.copy(position);
-      
-      // Metadata para identificación
-      pointMesh.userData = {
-        name: point.name,
-        lat: point.lat,
-        lon: point.lon,
-        type: 'reference_point'
-      };
-            
-      console.log(`[REFERENCE-POINTS] ${point.name}: lat=${point.lat}°, lon=${point.lon}° -> (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
-    });
-    
-    console.log(`[REFERENCE-POINTS] ✅ ${this.REFERENCE_POINTS.length} puntos de referencia creados`);
-  }
+
 
   private createSatellites() {
     const sats = this.tle.getAllSatrecs();
@@ -693,7 +641,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
           this.simulatedDate = new Date(this.simulatedDate.getTime() + timeIncrement);
           console.log(`[TIME-SIM] Tiempo simulado (x${this.timeMultiplier}): ${this.simulatedDate.toISOString()}`);
         }
-        
+
         this.lastWorkerFrameDate = new Date(this.simulatedDate);
         this.workerBusy = false; // Listo para el siguiente frame
       }
@@ -712,17 +660,17 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private createUE() {
     this.ueMesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.0004),
-      new THREE.MeshBasicMaterial({ color: 0xFFA500  })
+      new THREE.MeshBasicMaterial({ color: 0xFFA500 })
     );
     this.ueMesh.position.set(0.1, 0, 0);
     this.scene.add(this.ueMesh);
   }
   private animate = () => {
     this.frameId = requestAnimationFrame(this.animate);
-    
+
     // Actualizar controles sin damping - solo cuando hay cambios reales
     this.controls?.update();
-    
+
     if (!this.worker || !this.satsMesh || !this.ueMesh) return;
 
     // Si el primer frame está cargando, solo renderiza y espera
@@ -783,7 +731,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         this.updateExistingLabelsScale();
       }
     }
-    
+
     // Actualizar escala de satélites en todos los modos (no solo vista detallada)
     if (this.frameId % 10 === 0) { // Cada 10 frames para suavidad
       this.updateSatelliteScale();
@@ -794,10 +742,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
   private updateSatellitePositions(satellites: { position: { x: number; y: number; z: number }; visible: boolean }[]) {
     if (!this.satsMesh) return;
-    
+
     const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
     const scale = this.calculateSatelliteScale(cameraDistance);
-    
+
     satellites.forEach((sat, index) => {
       if (sat.visible) {
         // 🎯 NUEVO: Usar coordenadas reales directas del worker (ya están en escala visual correcta)
@@ -806,15 +754,15 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
           sat.position.y,
           sat.position.z
         );
-        
-    // 🎯 CORREGIDO: Solo alinear con el sistema Three.js + calibración geográfica
-    // Aplicar rotación para alinear con Three.js Y luego ajuste de calibración
-    pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-            
+
+        // 🎯 CORREGIDO: Solo alinear con el sistema Three.js + calibración geográfica
+        // Aplicar rotación para alinear con Three.js Y luego ajuste de calibración
+        pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+
         // Aplicar posición y escala dinámica
         this.instanceMatrix.makeScale(scale, scale, scale);
         this.instanceMatrix.setPosition(pos.x, pos.y, pos.z);
-        
+
         if (this.satsMesh) {
           this.satsMesh.setMatrixAt(index, this.instanceMatrix);
         }
@@ -837,7 +785,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   updateUserPosition() {
     // 🎯 MEJORADO: Usar conversión geográfica precisa
     const position = this.geographicToCartesian(this.userLat, this.userLon, 0);
-    
+
     if (this.ueMesh) {
       this.ueMesh.position.copy(position);
       console.log(`[UE-POS] Usuario ubicado en: lat=${this.userLat}°, lon=${this.userLon}° -> (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
@@ -846,10 +794,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
   private updateSatellitePositionsChunk(chunk: { position: { x: number; y: number; z: number }; visible: boolean }[], offset: number) {
     if (!this.satsMesh) return;
-    
+
     const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
     const scale = this.calculateSatelliteScale(cameraDistance);
-    
+
     chunk.forEach((sat, i) => {
       if (sat.visible) {
         // 🎯 NUEVO: Usar coordenadas reales directas del worker (ya están en escala visual correcta)
@@ -858,26 +806,26 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
           sat.position.y,
           sat.position.z
         );
-        
+
         // 🎯 CORREGIDO: Solo alinear con el sistema Three.js + calibración geográfica
         pos.applyAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-        
-        
+
+
         // Aplicar posición y escala dinámica
         this.instanceMatrix.makeScale(scale, scale, scale);
         this.instanceMatrix.setPosition(pos.x, pos.y, pos.z);
-        
+
         if (this.satsMesh) {
           this.satsMesh.setMatrixAt(offset + i, this.instanceMatrix);
         }
       }
     });
-    
+
     if (this.satsMesh.instanceMatrix) {
       this.satsMesh.instanceMatrix.needsUpdate = true;
     }
   }
-  
+
   private extractSatelliteName(sat: any, index: number): string {
     // Debug solo para los primeros 3 satélites para no saturar
     if (index < 3) {
@@ -914,7 +862,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
   private calculateLabelScale(cameraDistance: number): { x: number; y: number } {
     // Escala base para etiquetas tipo cuadro como en la imagen
-    const baseScale = { x: 0.3, y: 0.08 }; 
+    const baseScale = { x: 0.3, y: 0.08 };
 
     // Factor de escala adaptado al zoom
     let scaleFactor = 1;
@@ -949,9 +897,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private calculateSatelliteScale(cameraDistance: number): number {
     // Escala base para los satélites
     const baseScale = 1.0;
-    
+
     let scaleFactor = 1;
-    
+
     if (cameraDistance <= 0.12) {
       // Zoom máximo - satélites más pequeños para no saturar la vista
       scaleFactor = 0.4;
@@ -968,7 +916,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       // Sin zoom - satélites más grandes para vista general
       scaleFactor = 1.4;
     }
-    
+
     return baseScale * scaleFactor;
   }
 
@@ -977,26 +925,26 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
    */
   private updateSatelliteScale() {
     if (!this.satsMesh) return;
-    
+
     const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
     const scale = this.calculateSatelliteScale(cameraDistance);
-    
+
     // Aplicar la escala a todas las instancias
     for (let i = 0; i < this.satsMesh.count; i++) {
       // Obtener la matriz actual
       this.satsMesh.getMatrixAt(i, this.instanceMatrix);
-      
+
       // Extraer posición y rotación, aplicar nueva escala
       const position = new THREE.Vector3();
       const quaternion = new THREE.Quaternion();
       const currentScale = new THREE.Vector3();
       this.instanceMatrix.decompose(position, quaternion, currentScale);
-      
+
       // Crear nueva matriz con la escala actualizada
       this.instanceMatrix.compose(position, quaternion, new THREE.Vector3(scale, scale, scale));
       this.satsMesh.setMatrixAt(i, this.instanceMatrix);
     }
-    
+
     if (this.satsMesh.instanceMatrix) {
       this.satsMesh.instanceMatrix.needsUpdate = true;
     }
@@ -1027,7 +975,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         meanMotionDot: parseFloat(line1.substring(33, 43)),
         meanMotionDotDot: parseFloat(line1.substring(44, 52)),
         bstar: parseFloat(line1.substring(53, 61)),
-        
+
         // Línea 2  
         inclination: parseFloat(line2.substring(8, 16)), // grados
         raan: parseFloat(line2.substring(17, 25)), // ascensión nodo, grados
@@ -1035,7 +983,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         argumentOfPeriapsis: parseFloat(line2.substring(34, 42)), // grados
         meanAnomaly: parseFloat(line2.substring(43, 51)), // grados
         meanMotion: parseFloat(line2.substring(52, 63)), // rev/día
-        
+
         // Datos calculados
         name: this.extractSatelliteName(sat, index)
       };
@@ -1046,8 +994,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       const minutesPerDay = 1440;
       const period = minutesPerDay / elements.meanMotion; // minutos
       const periodSeconds = period * 60; // segundos
-      
-      const semiMajorAxis = Math.pow((GM * periodSeconds * periodSeconds) / (4 * Math.PI * Math.PI), 1/3);
+
+      const semiMajorAxis = Math.pow((GM * periodSeconds * periodSeconds) / (4 * Math.PI * Math.PI), 1 / 3);
       elements.semiMajorAxis = semiMajorAxis; // km
 
       // Calcular altura del perigeo y apogeo
@@ -1070,6 +1018,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     }
   }
 
+  /* 
   // 🎯 MÉTODO DE DIAGNÓSTICO: Analizar elementos orbitales de los TLEs actuales
   public analyzeTLEOrbitalElements(): void {
     console.log('[TLE-ORBITAL-ANALYSIS] 🔍 Analizando elementos orbitales de los TLEs...');
@@ -1118,14 +1067,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (inclination < 110) return '🔴 (Polar)';
     return '🟣 (Retrógrada)';
   }
-
+*/
   // Helper: Calcular velocidad orbital promedio
   private calculateOrbitalVelocity(semiMajorAxis: number): number {
     const GM = 398600.4418; // km³/s²
     return Math.sqrt(GM / semiMajorAxis);
   }
 
- 
+
 
   // Helper: Calcular edad de la época del TLE
   private calculateEpochAge(epoch: number): number {
@@ -1138,18 +1087,55 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
 
   // 🎯 MÉTODO SIMPLE: Calcular offset para etiquetas
-  private calculateSmartLabelOffset(position: THREE.Vector3, index: number, cameraDistance: number): THREE.Vector3 {
-    // Dirección desde el centro de la Tierra hacia el satélite
-    const directionFromEarth = position.clone().normalize();
-    
-    // Offset base dependiente del zoom de la cámara
-    const baseOffset = cameraDistance < 0.15 ? 0.01 : 0.02;
-    
-    // Aplicar offset simple hacia afuera
-    return directionFromEarth.multiplyScalar(baseOffset);
+  private calculateSmartLabelOffset(satellitePosition: THREE.Vector3, index: number, cameraDistance: number): THREE.Vector3 {
+    // Offset base muy pequeño para mantener las etiquetas pegadas
+    let baseOffset = 0.0001; // Mucho más pequeño que antes
+
+    // Ajustar offset según el zoom - más cerca = offset más pequeño
+    if (cameraDistance <= 0.12) {
+      baseOffset = 0.0008; // SúPER pegado en zoom máximo
+    } else if (cameraDistance <= 0.15) {
+      baseOffset = 0.0008;  // Muy pegado en zoom alto
+    } else if (cameraDistance <= 0.2) {
+      baseOffset = 0.0002; // Pegado en zoom medio
+    } else {
+      baseOffset = 0.0002;  // Ligeramente separado en zoom bajo
+    }
+
+    // Calcular dirección desde el centro de la Tierra hacia el satélite
+    const earthCenter = new THREE.Vector3(0, 0, 0);
+    const directionFromEarth = satellitePosition.clone().sub(earthCenter).normalize();
+
+    // Calcular dirección hacia la cámara desde el satélite
+    const directionToCamera = this.camera.position.clone().sub(satellitePosition).normalize();
+
+    // Combinar ambas direcciones para posicionar la etiqueta "hacia fuera" del satélite
+    // pero también visible hacia la cámara
+    const combinedDirection = directionFromEarth.clone()
+      .multiplyScalar(0.7) // 70% hacia fuera de la Tierra
+      .add(directionToCamera.multiplyScalar(0.3)); // 30% hacia la cámara
+
+    combinedDirection.normalize();
+
+    // Aplicar una pequeña variación angular para evitar solapamientos exactos
+    // Solo cuando hay muchos satélites muy cerca
+    const variationAngle = (index % 4) * (Math.PI / 8); // Variación de 0°, 22.5°, 45°, 67.5°
+    const rotationAxis = new THREE.Vector3(0, 0, 1); // Rotar alrededor del eje Z
+
+    // Solo aplicar variación si estamos en zoom muy cercano y podría haber crowding
+    if (cameraDistance <= 0.13) {
+      combinedDirection.applyAxisAngle(rotationAxis, variationAngle * 0.3); // Variación sutil
+    }
+
+    // Calcular el offset final
+    const finalOffset = combinedDirection.multiplyScalar(baseOffset);
+
+    console.log(`[LABEL-OFFSET] Sat ${index}: offset=${baseOffset.toFixed(6)}, zoom=${cameraDistance.toFixed(3)}`);
+
+    return finalOffset;
   }
 
-  
+
 
   // 🎯 MÉTODO AUXILIAR: Rotar la Tierra manualmente para pruebas
   public rotateEarth(xDeg: number, yDeg: number, zDeg: number): void {
@@ -1157,7 +1143,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       this.earthMesh.rotation.x = THREE.MathUtils.degToRad(xDeg);
       this.earthMesh.rotation.y = THREE.MathUtils.degToRad(yDeg);
       this.earthMesh.rotation.z = THREE.MathUtils.degToRad(zDeg);
-      
+
       // También rotar wireframe y grid
       if (this.earthWireframe) {
         this.earthWireframe.rotation.x = THREE.MathUtils.degToRad(xDeg);
@@ -1169,7 +1155,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         this.earthGrid.rotation.y = THREE.MathUtils.degToRad(yDeg);
         this.earthGrid.rotation.z = THREE.MathUtils.degToRad(zDeg);
       }
-      
+
       console.log(`[COORDS] Tierra rotada a: X=${xDeg}°, Y=${yDeg}°, Z=${zDeg}°`);
     }
   }
@@ -1177,22 +1163,22 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   // 🎯 NUEVOS MÉTODOS: Control de posición del UE
   public moveUETo(lat: number, lon: number, alt: number = 0): void {
     console.log(`[UE-MOVE] 📍 Moviendo UE a: lat=${lat}°, lon=${lon}°, alt=${alt}km`);
-    
+
     // Actualizar las propiedades del componente
     this.userLat = lat;
     this.userLon = lon;
-    
+
     // Calcular nueva posición usando nuestro sistema de coordenadas
     const position = this.geographicToCartesian(lat, lon, alt);
-    
+
     if (this.ueMesh) {
       this.ueMesh.position.copy(position);
       console.log(`[UE-MOVE] ✅ UE posicionado en: (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
-      
+
       // Verificar que el UE esté visible
       const distanceFromCenter = position.distanceTo(new THREE.Vector3(0, 0, 0));
       console.log(`[UE-MOVE] Distancia desde centro: ${distanceFromCenter.toFixed(4)} (Tierra radio: 0.1)`);
-      
+
       // Hacer el UE más grande para que sea más visible
       if (this.ueMesh.scale.x < 2) {
         this.ueMesh.scale.set(2, 2, 2);
@@ -1201,25 +1187,25 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     }
   }
 
- 
+
   // 🎯 MÉTODO SIMPLE: Conversión de coordenadas geográficas CORREGIDA
   private geographicToCartesian(lat: number, lon: number, alt: number = 0): THREE.Vector3 {
     const R = 6371; // Radio de la Tierra en km
     const radius = (R + alt) / R * 0.1; // Normalizado a escala del simulador
-    
+
     // 🚨 CORRECCIÓN FINAL: Intercambiar X y Z para alinear con textura Three.js
     // Coordenadas esféricas estándar: lat/lon -> x,y,z
     const phi = THREE.MathUtils.degToRad(90 - lat);   // Colatitud (0 = polo norte, 90 = ecuador)
     const theta = THREE.MathUtils.degToRad(lon + 90);      // Longitud (0 = Greenwich, + hacia este)
-    
+
     // ✅ FÓRMULA CORREGIDA: Intercambio X ↔ Z para alinear correctamente
     const x = radius * Math.sin(phi) * Math.sin(theta);   // X = sin(theta) para longitudes correctas
     const y = radius * Math.cos(phi);                     // Y hacia arriba (polo norte) 
     const z = radius * Math.sin(phi) * Math.cos(theta);   // Z = cos(theta) para profundidad correcta
-    
+
     return new THREE.Vector3(x, y, z);
   }
 
-  
-  
+
+
 }

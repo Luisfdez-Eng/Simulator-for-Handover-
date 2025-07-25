@@ -78,6 +78,17 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private averageOrbitalVelocity = 7.66; // km/s - Velocidad orbital típica de Starlink
   private lastOrbitalMetricsUpdate = 0; // Timestamp de última actualización
 
+  // 🎯 NUEVO: Sistema de selección y tracking de satélites
+  private selectedSatelliteIndex: number | null = null; // Índice del satélite seleccionado
+  private selectedSatelliteMesh: THREE.Mesh | null = null; // 🎯 NUEVO: Mesh separado para satélite seleccionado
+  private selectedSatellitePosition: THREE.Vector3 | null = null; // 🎯 ANTI-PARPADEO: Cache de posición
+  private selectedSatelliteLine: THREE.Line | null = null; // 🎯 NUEVO: Línea del satélite a la Tierra
+  private raycaster = new THREE.Raycaster(); // Para detección de clics en satélites
+  private mouse = new THREE.Vector2(); // Posición del mouse normalizada
+  private isMouseDown = false; // Flag para controlar interacciones de mouse
+  private mouseDownTime = 0; // Tiempo cuando se presionó el mouse
+  private readonly CLICK_TIME_THRESHOLD = 200; // Tiempo máximo para considerar un clic (ms)
+
   // 🎯 NUEVO: Sistema de visualización de órbitas
   private orbitalTraces: THREE.Group | null = null;
   private orbitalTracesVisible = true; // Activado por defecto para calibración
@@ -101,6 +112,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     cancelAnimationFrame(this.frameId);
     this.clearSatelliteLabels();
+    this.deselectSatellite(); // 🎯 NUEVO: Limpiar selección de satélite e indicador
     this.renderer.domElement.remove();
   }
 
@@ -129,6 +141,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.controls.addEventListener('change', () => {
       this.updateCameraControls();
     });
+
+    // 🎯 NUEVO: Event listeners para selección de satélites
+    this.setupSatelliteSelectionListeners();
+
     // Añadir helper de ejes
     const axesHelper = new THREE.AxesHelper(0.2);
     this.scene.add(axesHelper);
@@ -194,6 +210,421 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       this.updateSatelliteScale();
     }
   }
+
+  // 🎯 NUEVO: Sistema de selección de satélites
+
+  private setupSatelliteSelectionListeners() {
+    // Event listeners para selección de satélites con mouse
+    this.renderer.domElement.addEventListener('mousedown', this.onMouseDown.bind(this));
+    this.renderer.domElement.addEventListener('mouseup', this.onMouseUp.bind(this));
+    this.renderer.domElement.addEventListener('mousemove', this.onMouseMove.bind(this));
+
+    //console.log('[SELECTION] Event listeners para selección de satélites configurados');
+  }
+
+  private onMouseDown(event: MouseEvent) {
+    this.isMouseDown = true;
+    this.mouseDownTime = performance.now();
+    this.updateMousePosition(event);
+  }
+
+  private onMouseUp(event: MouseEvent) {
+    if (!this.isMouseDown) return;
+
+    const clickDuration = performance.now() - this.mouseDownTime;
+    
+    //console.log(`[SELECTION] 🖱️ Mouse up - duración: ${clickDuration.toFixed(0)}ms`);
+    
+    // Solo procesar como clic si fue un click rápido (no un drag)
+    if (clickDuration < this.CLICK_TIME_THRESHOLD) {
+      // 🎯 NUEVO: Prevenir que los OrbitControls interfieran
+      event.preventDefault();
+      event.stopPropagation();
+      
+      this.updateMousePosition(event);
+      
+      // 🎯 NUEVO: Añadir un pequeño delay para asegurar que el raycasting funcione
+      setTimeout(() => {
+        this.handleSatelliteSelection();
+      }, 10);
+    } else {
+      //console.log(`[SELECTION] 🔄 Drag detectado (${clickDuration.toFixed(0)}ms) - no se selecciona`);
+    }
+
+    this.isMouseDown = false;
+  }
+
+  private onMouseMove(event: MouseEvent) {
+    this.updateMousePosition(event);
+  }
+
+  private updateMousePosition(event: MouseEvent) {
+    // Convertir coordenadas de mouse a coordenadas normalizadas (-1 a +1)
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  private handleSatelliteSelection() {
+    //console.log('[SELECTION] 🎯 Intentando seleccionar satélite...');
+    
+    if (!this.satsMesh) {
+      //console.log('[SELECTION] ❌ No hay satsMesh disponible');
+      return;
+    }
+
+    if (!this.isDetailedView) {
+      //console.log('[SELECTION] ❌ No estás en vista detallada. Haz zoom para seleccionar satélites.');
+      return;
+    }
+
+    //console.log(`[SELECTION] 🔍 Mouse en: (${this.mouse.x.toFixed(3)}, ${this.mouse.y.toFixed(3)})`);
+
+    // Configurar raycaster con tolerancia ampliada
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    
+    // 🎯 NUEVO: Ampliar el threshold del raycaster para facilitar la selección
+    this.raycaster.params.Points = { threshold: 0.05 }; // Más tolerante
+    this.raycaster.params.Line = { threshold: 0.005 };
+
+    //console.log(`[SELECTION] 📡 Raycaster configurado desde cámara hacia: (${this.raycaster.ray.direction.x.toFixed(3)}, ${this.raycaster.ray.direction.y.toFixed(3)}, ${this.raycaster.ray.direction.z.toFixed(3)})`);
+
+    // Detectar intersecciones con los satélites
+    const intersections = this.raycaster.intersectObject(this.satsMesh);
+    
+    //console.log(`[SELECTION] 🎯 Intersecciones encontradas: ${intersections.length}`);
+
+    if (intersections.length > 0) {
+      const intersection = intersections[0];
+      const satelliteIndex = intersection.instanceId;
+      
+      console.log(`[SELECTION] ✅ Intersección detectada:`, {
+        instanceId: satelliteIndex,
+        distance: intersection.distance.toFixed(4),
+        point: intersection.point
+      });
+
+      if (satelliteIndex !== undefined && satelliteIndex !== null) {
+        this.selectSatellite(satelliteIndex);
+      } else {
+        console.log('[SELECTION] ❌ instanceId undefined o null');
+      }
+    } else {
+      // 🎯 NUEVO: Método alternativo por proximidad si raycasting falla
+      console.log('[SELECTION] 🔍 Raycasting falló, intentando selección por proximidad...');
+      const proximityResult = this.selectByProximity();
+      
+      if (!proximityResult) {
+        console.log('[SELECTION] 🌌 Clic en área vacía - deseleccionando');
+        this.deselectSatellite();
+      }
+    }
+  }
+
+  // 🎯 NUEVO: Método de selección por proximidad como fallback
+  private selectByProximity(): boolean {
+    if (!this.satsMesh) return false;
+
+    const tempMatrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    const screenPosition = new THREE.Vector3();
+    const mouseVector = new THREE.Vector2(this.mouse.x, this.mouse.y);
+    
+    let closestDistance = Infinity;
+    let closestIndex = -1;
+    const maxProximityDistance = 0.05; // Tolerancia en coordenadas de pantalla
+
+    // Iterar sobre todos los satélites visibles
+    for (let i = 0; i < this.satsMesh.count; i++) {
+      this.satsMesh.getMatrixAt(i, tempMatrix);
+      position.setFromMatrixPosition(tempMatrix);
+      
+      // Proyectar posición 3D a coordenadas de pantalla
+      screenPosition.copy(position);
+      screenPosition.project(this.camera);
+      
+      // Calcular distancia 2D en pantalla
+      const distance2D = mouseVector.distanceTo(new THREE.Vector2(screenPosition.x, screenPosition.y));
+      
+      if (distance2D < maxProximityDistance && distance2D < closestDistance) {
+        closestDistance = distance2D;
+        closestIndex = i;
+      }
+    }
+
+    if (closestIndex >= 0) {
+      console.log(`[SELECTION] 🎯 Selección por proximidad: satélite ${closestIndex} (distancia: ${closestDistance.toFixed(4)})`);
+      this.selectSatellite(closestIndex);
+      return true;
+    }
+
+    return false;
+  }
+
+  private selectSatellite(index: number) {
+    console.log(`[SELECTION] 🛰️ Seleccionando satélite ${index}`);
+
+    // Deseleccionar satélite anterior si existe
+    this.deselectSatellite();
+
+    // Establecer nuevo satélite seleccionado
+    this.selectedSatelliteIndex = index;
+    console.log(`[SELECTION] 📌 selectedSatelliteIndex establecido a: ${this.selectedSatelliteIndex}`);
+
+    // 🎯 NUEVO ENFOQUE: Crear mesh separado verde en lugar de cambiar colores
+    this.createSelectedSatelliteIndicator(index);
+
+    // 🎯 NUEVO: Crear línea del satélite hacia la Tierra
+    this.createSatelliteToEarthLine(index);
+
+    // Obtener información del satélite
+    const sats = this.tle.getAllSatrecs();
+    if (sats[index]) {
+      const satName = this.extractSatelliteName(sats[index], index);
+      console.log(`[SELECTION] ✅ Satélite seleccionado: ${satName} (índice: ${index})`);
+      
+      // 🎯 NUEVO: Mostrar posición actual del satélite
+      if (this.satsMesh) {
+        const tempMatrix = new THREE.Matrix4();
+        const position = new THREE.Vector3();
+        this.satsMesh.getMatrixAt(index, tempMatrix);
+        position.setFromMatrixPosition(tempMatrix);
+        console.log(`[SELECTION] 📍 Posición: (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
+      }
+    } else {
+      console.log(`[SELECTION] ❌ No se encontró información del satélite ${index}`);
+    }
+  }
+
+  private deselectSatellite() {
+    if (this.selectedSatelliteIndex === null) return;
+
+    console.log(`[SELECTION] 🔄 Deseleccionando satélite ${this.selectedSatelliteIndex}`);
+
+    // 🎯 NUEVO: Eliminar mesh del satélite seleccionado
+    this.removeSelectedSatelliteIndicator();
+    
+    // 🎯 NUEVO: Eliminar línea del satélite hacia la Tierra
+    this.removeSatelliteToEarthLine();
+    
+    // 🎯 ANTI-PARPADEO: Limpiar cache de posición
+    this.selectedSatellitePosition = null;
+    this.selectedSatelliteIndex = null;
+  }
+
+  // 🎯 NUEVO: Crear indicador visual separado para satélite seleccionado
+  private createSelectedSatelliteIndicator(index: number) {
+    if (!this.satsMesh) return;
+
+    console.log(`[SELECTION-INDICATOR] 🟢 Creando indicador verde para satélite ${index}`);
+
+    // Obtener posición del satélite seleccionado
+    const tempMatrix = new THREE.Matrix4();
+    const position = new THREE.Vector3();
+    this.satsMesh.getMatrixAt(index, tempMatrix);
+    position.setFromMatrixPosition(tempMatrix);
+
+    // 🎯 SOLUCION Z-FIGHTING: Crear geometría ligeramente más grande y separada
+    const geometry = new THREE.SphereGeometry(0.0008); // Más grande que el satélite original (0.0002)
+    const material = new THREE.MeshBasicMaterial({
+      color: 0x00ff00, // Verde brillante
+      transparent: false,
+      opacity: 1.0,
+      depthTest: true,
+      depthWrite: true
+    });
+
+    // Crear mesh del indicador
+    this.selectedSatelliteMesh = new THREE.Mesh(geometry, material);
+    
+    // 🎯 SOLUCION Z-FIGHTING: Posicionar ligeramente hacia la cámara
+    const directionToCamera = this.camera.position.clone().sub(position).normalize();
+    const offsetPosition = position.clone().add(directionToCamera.multiplyScalar(0.0001));
+    this.selectedSatelliteMesh.position.copy(offsetPosition);
+    
+    // 🎯 ANTI-PARPADEO: Inicializar cache de posición
+    this.selectedSatellitePosition = position.clone();
+    
+    // 🎯 SOLUCION Z-FIGHTING: Render order más alto para que se dibuje después
+    this.selectedSatelliteMesh.renderOrder = 1;
+    
+    // Añadir a la escena
+    this.scene.add(this.selectedSatelliteMesh);
+    
+    console.log(`[SELECTION-INDICATOR] ✅ Indicador verde creado en posición: (${offsetPosition.x.toFixed(4)}, ${offsetPosition.y.toFixed(4)}, ${offsetPosition.z.toFixed(4)})`);
+  }
+
+  // 🎯 NUEVO: Crear línea del satélite seleccionado hacia la Tierra
+  private createSatelliteToEarthLine(index: number) {
+    if (!this.satsMesh) return;
+
+    console.log(`[SATELLITE-LINE] 🌍 Creando línea del satélite ${index} hacia la Tierra`);
+
+    // Obtener posición del satélite seleccionado
+    const tempMatrix = new THREE.Matrix4();
+    const satellitePosition = new THREE.Vector3();
+    this.satsMesh.getMatrixAt(index, tempMatrix);
+    satellitePosition.setFromMatrixPosition(tempMatrix);
+
+    // Centro de la Tierra
+    const earthCenter = new THREE.Vector3(0, 0, 0);
+    
+    // Calcular dirección del satélite hacia el centro de la Tierra
+    const directionToEarth = earthCenter.clone().sub(satellitePosition).normalize();
+    
+    // Calcular punto en la superficie de la Tierra (radio = 0.1)
+    const earthRadius = 0.1;
+    const earthSurfacePoint = satellitePosition.clone().add(directionToEarth.multiplyScalar(satellitePosition.distanceTo(earthCenter) - earthRadius));
+
+    // Crear geometría de línea
+    const points = [
+      satellitePosition.clone(),
+      earthSurfacePoint.clone()
+    ];
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    
+    // Material de línea verde brillante
+    const material = new THREE.LineBasicMaterial({
+      color: 0x00ff00, // Verde brillante como el satélite
+      linewidth: 2,
+      transparent: true,
+      opacity: 0.8
+    });
+
+    // Crear línea
+    this.selectedSatelliteLine = new THREE.Line(geometry, material);
+    this.selectedSatelliteLine.renderOrder = 2; // Renderizar después del satélite
+    
+    // Añadir a la escena
+    this.scene.add(this.selectedSatelliteLine);
+    
+    console.log(`[SATELLITE-LINE] ✅ Línea creada desde satélite (${satellitePosition.x.toFixed(4)}, ${satellitePosition.y.toFixed(4)}, ${satellitePosition.z.toFixed(4)}) hacia superficie terrestre (${earthSurfacePoint.x.toFixed(4)}, ${earthSurfacePoint.y.toFixed(4)}, ${earthSurfacePoint.z.toFixed(4)})`);
+  }
+
+  // 🎯 NUEVO: Eliminar indicador visual del satélite seleccionado
+  private removeSelectedSatelliteIndicator() {
+    if (this.selectedSatelliteMesh) {
+      console.log(`[SELECTION-INDICATOR] 🗑️ Eliminando indicador verde`);
+      this.scene.remove(this.selectedSatelliteMesh);
+      
+      // Limpiar geometría y material
+      this.selectedSatelliteMesh.geometry.dispose();
+      if (this.selectedSatelliteMesh.material instanceof THREE.Material) {
+        this.selectedSatelliteMesh.material.dispose();
+      }
+      this.selectedSatelliteMesh = null;
+    }
+  }
+
+  // 🎯 NUEVO: Eliminar línea del satélite hacia la Tierra
+  private removeSatelliteToEarthLine() {
+    if (this.selectedSatelliteLine) {
+      console.log(`[SATELLITE-LINE] 🗑️ Eliminando línea hacia la Tierra`);
+      this.scene.remove(this.selectedSatelliteLine);
+      
+      // Limpiar geometría y material
+      this.selectedSatelliteLine.geometry.dispose();
+      if (this.selectedSatelliteLine.material instanceof THREE.Material) {
+        this.selectedSatelliteLine.material.dispose();
+      }
+      this.selectedSatelliteLine = null;
+    }
+  }
+
+  // 🎯 NUEVO: Actualizar línea del satélite hacia la Tierra
+  private updateSatelliteToEarthLine(satellitePosition: THREE.Vector3) {
+    if (!this.selectedSatelliteLine) return;
+
+    try {
+      // Centro de la Tierra
+      const earthCenter = new THREE.Vector3(0, 0, 0);
+      
+      // Calcular dirección del satélite hacia el centro de la Tierra
+      const directionToEarth = earthCenter.clone().sub(satellitePosition).normalize();
+      
+      // Calcular punto en la superficie de la Tierra (radio = 0.1)
+      const earthRadius = 0.1;
+      const earthSurfacePoint = satellitePosition.clone().add(directionToEarth.multiplyScalar(satellitePosition.distanceTo(earthCenter) - earthRadius));
+
+      // Actualizar puntos de la línea
+      const points = [
+        satellitePosition.clone(),
+        earthSurfacePoint.clone()
+      ];
+
+      // Actualizar geometría
+      this.selectedSatelliteLine.geometry.setFromPoints(points);
+      this.selectedSatelliteLine.geometry.attributes['position'].needsUpdate = true;
+    } catch (error) {
+      console.warn(`[SATELLITE-LINE] Error actualizando línea: ${error}`);
+    }
+  }
+
+  // 🎯 NUEVO: Actualizar posición del indicador del satélite seleccionado
+  private updateSelectedSatelliteIndicator() {
+    if (this.selectedSatelliteIndex === null || !this.selectedSatelliteMesh || !this.satsMesh) {
+      return;
+    }
+
+    try {
+      // Obtener nueva posición del satélite seleccionado
+      const tempMatrix = new THREE.Matrix4();
+      const position = new THREE.Vector3();
+      this.satsMesh.getMatrixAt(this.selectedSatelliteIndex, tempMatrix);
+      position.setFromMatrixPosition(tempMatrix);
+
+      // 🎯 ANTI-PARPADEO: Validar que la posición sea válida
+      if (position.length() === 0 || !isFinite(position.x) || !isFinite(position.y) || !isFinite(position.z)) {
+        // Si la posición no es válida, usar la última posición conocida
+        if (this.selectedSatellitePosition) {
+          position.copy(this.selectedSatellitePosition);
+        } else {
+          // Si no hay posición válida, ocultar temporalmente el indicador
+          this.selectedSatelliteMesh.visible = false;
+          return;
+        }
+      } else {
+        // Posición válida - asegurar que el indicador sea visible y guardar cache
+        this.selectedSatelliteMesh.visible = true;
+        this.selectedSatellitePosition = position.clone();
+      }
+
+      // 🎯 SOLUCION Z-FIGHTING: Mantener offset hacia la cámara en cada actualización
+      const directionToCamera = this.camera.position.clone().sub(position).normalize();
+      
+      // 🎯 ANTI-PARPADEO: Validar dirección hacia cámara
+      if (!isFinite(directionToCamera.x) || !isFinite(directionToCamera.y) || !isFinite(directionToCamera.z)) {
+        // Si la dirección no es válida, usar offset fijo hacia arriba
+        directionToCamera.set(0, 0, 1);
+      }
+      
+      const offsetPosition = position.clone().add(directionToCamera.multiplyScalar(0.00001));
+      
+      // Actualizar posición del indicador con offset
+      this.selectedSatelliteMesh.position.copy(offsetPosition);
+      
+      // 🎯 NUEVO: Actualizar línea hacia la Tierra
+      this.updateSatelliteToEarthLine(position);
+    } catch (error) {
+      // 🎯 ANTI-PARPADEO: En caso de error, mantener indicador visible en última posición conocida
+      console.warn(`[SELECTION-INDICATOR] Error actualizando posición: ${error}`);
+      if (this.selectedSatellitePosition && this.selectedSatelliteMesh) {
+        this.selectedSatelliteMesh.visible = true;
+        const directionToCamera = this.camera.position.clone().sub(this.selectedSatellitePosition).normalize();
+        const offsetPosition = this.selectedSatellitePosition.clone().add(directionToCamera.multiplyScalar(0.0001));
+        this.selectedSatelliteMesh.position.copy(offsetPosition);
+        
+        // 🎯 NUEVO: También actualizar línea con posición cacheada
+        this.updateSatelliteToEarthLine(this.selectedSatellitePosition);
+      }
+    }
+  }
+
+  // 🎯 ELIMINADO: Ya no necesitamos estos métodos de color
+  // private updateSatelliteColors() { ... }
+  // private restoreColorsAfterMatrixUpdate() { ... }
+
   private initializeLabelSystem() {
     // Canvas para generar texturas de texto (ya no se usa este canvas específico)
     this.canvas2D = document.createElement('canvas');
@@ -488,7 +919,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.scene.add(this.earthMesh);
     // Wireframe moderno
     const wireframe = new THREE.WireframeGeometry(geo);
-    this.earthWireframe = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 2 }));
+    this.earthWireframe = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 }));
     // 🎯 PASO 2: Sin rotaciones forzadas - alineado con la Tierra
     this.earthWireframe.rotation.x = 0;
     this.earthWireframe.rotation.y = 0;
@@ -530,7 +961,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       }
     }
     gridGeo.setAttribute('position', new THREE.Float32BufferAttribute(gridVerts, 3));
-    this.earthGrid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x00ffff, opacity: 0.5, transparent: true }));
+    this.earthGrid = new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0xfffffff, opacity: 0.5, transparent: true }));
     // 🎯 PASO 2: Sin rotaciones forzadas - alineado con la Tierra
     this.earthGrid.rotation.x = 0;
     this.earthGrid.rotation.y = 0;
@@ -553,6 +984,15 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       opacity: 1.0
     });
     this.satsMesh = new THREE.InstancedMesh(geometry, material, sats.length);
+    
+    // 🎯 SOLUCION Z-FIGHTING: Render order más bajo para satélites originales
+    this.satsMesh.renderOrder = 0;
+    
+    // 🎯 ELIMINADO: Ya no necesitamos buffer de colores porque usamos mesh separado para selección
+    // const colors = new Float32Array(sats.length * 3);
+    // for (let i = 0; i < sats.length; i++) { ... }
+    // this.satsMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+    
     this.scene.add(this.satsMesh);
 
     this.worker = new Worker('assets/orbital.worker.js');
@@ -695,15 +1135,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       positions.push(position);
     }
 
-    // 🎯 NUEVO: Forzar color verde brillante constante para todos los satélites
-    const constantColor = new THREE.Color(0xff0000); // Verde brillante siempre
-    for (let i = 0; i < this.satsMesh.count; i++) {
-      this.satsMesh.setColorAt(i, constantColor);
-    }
-
-    if (this.satsMesh.instanceColor) {
-      this.satsMesh.instanceColor.needsUpdate = true;
-    }
+    // 🎯 ELIMINADO: No llamar updateSatelliteColors() en cada frame
+    // Solo se llama cuando hay cambios de selección
 
     // 🎯 ASEGURAR: Métricas siempre null para mantener interfaz limpia
     this.currentMetrics = null;
@@ -736,6 +1169,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (this.frameId % 10 === 0) { // Cada 10 frames para suavidad
       this.updateSatelliteScale();
     }
+
+    // 🎯 ANTI-PARPADEO: Actualizar indicador de selección en cada frame para máxima suavidad
+    this.updateSelectedSatelliteIndicator();
 
     this.renderer.render(this.scene, this.camera);
   };
@@ -772,6 +1208,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (this.satsMesh.instanceMatrix) {
       this.satsMesh.instanceMatrix.needsUpdate = true;
     }
+
+    // 🎯 NUEVO: Actualizar posición del indicador del satélite seleccionado
+    this.updateSelectedSatelliteIndicator();
+
+    // 🎯 ELIMINADO: Ya no necesitamos restaurar colores porque usamos mesh separado
+    // this.restoreColorsAfterMatrixUpdate();
   }
   private updateFrustum() {
     this.frustumMatrix.multiplyMatrices(
@@ -824,6 +1266,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (this.satsMesh.instanceMatrix) {
       this.satsMesh.instanceMatrix.needsUpdate = true;
     }
+
+    // 🎯 NUEVO: Actualizar posición del indicador del satélite seleccionado
+    this.updateSelectedSatelliteIndicator();
+
+    // 🎯 ELIMINADO: Ya no necesitamos restaurar colores porque usamos mesh separado
+    // this.restoreColorsAfterMatrixUpdate();
   }
 
   private extractSatelliteName(sat: any, index: number): string {
@@ -948,6 +1396,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (this.satsMesh.instanceMatrix) {
       this.satsMesh.instanceMatrix.needsUpdate = true;
     }
+
+    // 🎯 NUEVO: Actualizar posición del indicador del satélite seleccionado
+    this.updateSelectedSatelliteIndicator();
+
+    // 🎯 ELIMINADO: Ya no necesitamos restaurar colores porque usamos mesh separado
+    // this.restoreColorsAfterMatrixUpdate();
   }
 
   // 🎯 NUEVO: Extraer elementos orbitales del TLE (formato manual robusto)
@@ -1069,6 +1523,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
 */
   // Helper: Calcular velocidad orbital promedio
+  
   private calculateOrbitalVelocity(semiMajorAxis: number): number {
     const GM = 398600.4418; // km³/s²
     return Math.sqrt(GM / semiMajorAxis);
@@ -1130,7 +1585,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // Calcular el offset final
     const finalOffset = combinedDirection.multiplyScalar(baseOffset);
 
-    console.log(`[LABEL-OFFSET] Sat ${index}: offset=${baseOffset.toFixed(6)}, zoom=${cameraDistance.toFixed(3)}`);
+    //console.log(`[LABEL-OFFSET] Sat ${index}: offset=${baseOffset.toFixed(6)}, zoom=${cameraDistance.toFixed(3)}`);
 
     return finalOffset;
   }

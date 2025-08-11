@@ -4,6 +4,21 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { TleLoaderService, SatData } from '../../services/tle-loader.service';
 import { MLHandoverService, SatelliteMetrics } from '../../services/ml-handover.service';
+/**
+ * ================================== CONVENCIÓN COORDENADAS (Fase C – cerrada) ==================================
+ * Fuente de datos (worker): ECI (km) + GMST por frame.
+ * Modo EarthFixed (por defecto): ECI -> ECF aplicando rotación activa R3(-GMST) en eciToEcfLocal().
+ * Sistema escena (Three.js, Y-up):
+ *    scene.x = ecf.x
+ *    scene.y = ecf.z          (eje polar)
+ *    scene.z = ecf.y * LONGITUDE_SIGN (Este/Oeste controlado por un único interruptor)
+ * Escala única: KM_TO_SCENE = 0.1 / 6371 (radio terrestre en escena = 0.1).
+ * LONGITUDE_SIGN SOLO se aplica en el paso ecf -> scene (función ecfToScene()).
+ * Helpers geográficos generan posiciones ECF (km) sin signo; luego se mapean vía ecfToScene().
+ * Eliminados hacks históricos (rotación -π/2, theta+90, swaps de ejes en helpers).
+ * Para invertir visualmente E/W ajustar LONGITUDE_SIGN (1 o -1) en un solo punto.
+ * =============================================================================================
+ */
 // Eliminado import duplicado de OrbitControls via wrapper
 
 // Enum de frame de vista para futura migración (Fase B)
@@ -82,8 +97,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
   // Constantes de transformación (Fase B)
   private readonly KM_TO_SCENE = 0.1 / 6371; // Escala única km->escena
-  private readonly ROT_X_AXIS = new THREE.Vector3(1, 0, 0);
-  private readonly ROT_X_ANGLE = -Math.PI / 2; // Rotación visual temporal
+  // ROT_X_* eliminados: rotación global -π/2 retirada definitivamente.
   // Inversión global de la componente longitudinal (Este/Oeste). Usar -1 para invertir signo de la longitud.
   private readonly LONGITUDE_SIGN = -1;
 
@@ -1203,8 +1217,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     const sat = this.satellitesSnapshot[this.selectedSatelliteIndex];
     if (!sat) { console.warn('Sat no encontrado'); return; }
     if (sat.lon == null) { console.warn('Sat sin lon del worker'); return; }
-  const ecfRaw = this.eciToEcfLocal({ x: sat.eci_km.x, y: sat.eci_km.y, z: sat.eci_km.z }, sat.gmst);
-  const ecf = { x: ecfRaw.x, y: ecfRaw.y * this.LONGITUDE_SIGN, z: ecfRaw.z };
+  const ecf = this.eciToEcfLocal({ x: sat.eci_km.x, y: sat.eci_km.y, z: sat.eci_km.z }, sat.gmst); // NO aplicar LONGITUDE_SIGN aquí
     const lonLocal = Math.atan2(ecf.y, ecf.x);
     const dLon = ((lonLocal - sat.lon + Math.PI) % (2 * Math.PI)) - Math.PI;
     const toDeg = (rad: number) => THREE.MathUtils.radToDeg(rad).toFixed(3);
@@ -1223,11 +1236,34 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   // Fase C: conversión ECI->ECF (si procede) y reorden a escena (X=ecf.x, Y=ecf.z, Z=ecf.y)
   private toSceneFromECI(eciKm: { x: number; y: number; z: number }, gmst: number): THREE.Vector3 {
     const ecf = (this.viewFrame === ViewFrame.EarthFixed) ? this.eciToEcfLocal(eciKm, gmst) : eciKm;
+    return this.ecfToScene(ecf);
+  }
+
+  // ÚNICO punto donde se aplica LONGITUDE_SIGN al mapear ECF->Scene
+  private ecfToScene(ecf: { x: number; y: number; z: number }): THREE.Vector3 {
     return new THREE.Vector3(
       ecf.x * this.KM_TO_SCENE,
       ecf.z * this.KM_TO_SCENE,
-      (ecf.y * this.LONGITUDE_SIGN) * this.KM_TO_SCENE
+      ecf.y * this.LONGITUDE_SIGN * this.KM_TO_SCENE
     );
+  }
+
+  // Helper base único: devuelve coordenadas ECF (km) en convención Y-up estándar.
+  private geoECEF_Yup(latDeg: number, lonDeg: number, altitudeKm = 0): { x: number; y: number; z: number } {
+    const R = 6371; // km
+    const lat = THREE.MathUtils.degToRad(latDeg);
+    const lon = THREE.MathUtils.degToRad(lonDeg);
+    const r = R + altitudeKm;
+    const x = r * Math.cos(lat) * Math.cos(lon);
+    const y = r * Math.sin(lat);       // eje polar
+    const z = r * Math.cos(lat) * Math.sin(lon); // 90E -> +Z antes de LONGITUDE_SIGN (que se aplica solo en ecfToScene)
+    return { x, y, z };
+  }
+
+  // (Mantener por compatibilidad interna) Devuelve posición en escena directamente usando el helper base.
+  private geographicToCartesian(latDeg: number, lonDeg: number, altKm: number = 0): THREE.Vector3 {
+    const ecf = this.geoECEF_Yup(latDeg, lonDeg, altKm);
+    return this.ecfToScene(ecf);
   }
 
   // API pública para pruebas manuales
@@ -1240,39 +1276,23 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.debugLogs = enabled;
     console.log(`[DEBUG-LOGS] ${enabled ? 'Activados' : 'Desactivados'}`);
   }
+  //endregion
+
 
   //region Debug Geo Markers [rgba(255,200,0,0.18)]
-  /**
-   * Añade una esfera marcadora en la superficie (o ligera altitud) dada una lon/lat en grados.
-   * Uso en consola: ngRef.addGeoMarker(0,0); // Greenwich
-   */
+  
   public addGeoMarker(lonDeg: number, latDeg: number, color: number | string = 0x00ff00, size = 0.002, altitudeKm = 0): THREE.Mesh {
-    const R_SCENE = 0.1; // radio terrestre en escena
-    const lon = THREE.MathUtils.degToRad(lonDeg);
-    const lat = THREE.MathUtils.degToRad(latDeg);
-    // Pequeña elevación opcional (altitudeKm) convertida a escena
-    const r = R_SCENE + (altitudeKm / 6371) * 0.1;
-  const x = r * Math.cos(lat) * Math.cos(lon);
-  const y = r * Math.sin(lat);
-  const z = r * Math.cos(lat) * Math.sin(lon) * this.LONGITUDE_SIGN;
+    const ecf = this.geoECEF_Yup(latDeg, lonDeg, altitudeKm); // km
+    const scenePos = this.ecfToScene(ecf);
     const geom = new THREE.SphereGeometry(size, 16, 16);
-  const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false }); // depthTest off para debug visible
+    const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, depthWrite: false });
     const marker = new THREE.Mesh(geom, mat);
-    marker.position.set(x, y, z);
-  marker.userData['__geoMarker'] = { lonDeg, latDeg };
+    marker.position.copy(scenePos);
+    marker.userData['__geoMarker'] = { lonDeg, latDeg };
     this.scene.add(marker);
-    console.log(`[GEO-MARKER] lon=${lonDeg}° lat=${latDeg}° -> (${x.toFixed(5)}, ${y.toFixed(5)}, ${z.toFixed(5)})`);
+    console.log(`[GEO-MARKER] lon=${lonDeg}° lat=${latDeg}° -> (${scenePos.x.toFixed(5)}, ${scenePos.y.toFixed(5)}, ${scenePos.z.toFixed(5)})`);
     return marker;
   }
-
-  /**
-   * Crea marcadores estándar para validar orientación de la textura:
-   *  - lon0/lat0 (verde) debe caer en +X
-   *  - lon90E (rojo) debe caer en +Z
-   *  - lon-90W (azul) en -Z
-   *  - lon180 (magenta) en -X
-   * Uso: ngRef.addOrientationMarkers();
-   */
   public addOrientationMarkers() {
     const created = [
       this.addGeoMarker(0, 0, 0x00ff00, 0.0025),   // Greenwich
@@ -1284,10 +1304,6 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     console.log('[GEO-MARKER] Marcadores de orientación creados', created);
     return created;
   }
-
-  /** Marcadores de ciudades para validar sentido longitudinal.
-   * Uso: ngRef.addReferenceCityMarkers()
-   */
   public addReferenceCityMarkers() {
     const cities = [
       { name: 'Greenwich', lon: 0, lat: 51.48, color: 0x00ff00 },
@@ -1304,8 +1320,6 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     });
     console.log('[CITY] Marcadores de ciudades añadidos.');
   }
-
-  /** Reposiciona la cámara en una vista canónica: mira hacia -X, Este (+Z) queda a la derecha de la pantalla. */
   public resetCameraStandard() {
     this.camera.position.set(0.5, 0.0, 0.0); // sobre +X
     this.camera.up.set(0, 1, 0);
@@ -1313,8 +1327,6 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if ((this as any).controls) (this as any).controls.update();
     console.log('[CAMERA] Vista estándar aplicada (camera@+X, mirando al origen). Derecha pantalla = +Z (Este).');
   }
-
-  /** Dibuja un pequeño arco (meridiano) para una longitud dada para ver orientación visual. */
   public addLongitudeArc(lonDeg: number, color: number = 0x00ffff) {
     const lon = THREE.MathUtils.degToRad(lonDeg);
     const points: THREE.Vector3[] = [];
@@ -1334,14 +1346,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     console.log(`[LON-ARC] Longitud ${lonDeg}° añadida.`);
     return line;
   }
-
-  /** Rápido test: añade arcos para 0°, 10°E, 20°E, 30°E para ver que crecen hacia +Z. */
   public addEastTestArcs() {
     [0, 5, 10, 15, 20, 30].forEach((d,i) => this.addLongitudeArc(d, 0x00ffff + i * 1000));
     console.log('[LON-ARC] Arcos Este añadidos.');
   }
-
-  /** Elimina todos los marcadores creados por addGeoMarker */
   public clearGeoMarkers() {
     const toRemove: THREE.Object3D[] = [];
   this.scene.traverse(o => { if (o.userData && o.userData['__geoMarker']) toRemove.push(o); });
@@ -1357,14 +1365,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
   //endregion
   
-  // LEGACY: toSceneFromECF eliminado en Fase C (se conserva comentario para trazabilidad)
+  //region Create & update Elements [rgba(68, 255, 0, 0.18)]
 
   private createSatellites() {
     const sats = this.tle.getAllSatrecs();
     console.log(`[INIT] Creando ${sats.length} satélites`);
 
     // Tamaño razonable y color rojo puro
-    const geometry = new THREE.SphereGeometry(0.0002);
+    const geometry = new THREE.SphereGeometry(0.0004);
     const material = new THREE.MeshBasicMaterial({
       color: 0xff0000,
       transparent: false,
@@ -1664,21 +1672,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       this.lastLogFrame = this.frameId;
     }
   }
-  private geographicToCartesian(latDeg: number, lonDeg: number, altKm: number = 0): THREE.Vector3 {
-    // Fase C: Convención estándar Y-up (Three.js) X=lon0, Z=lon90E; sin theta+90 ni swaps legacy.
-    const R = 6371; // km
-    const lat = THREE.MathUtils.degToRad(latDeg);
-    const lon = THREE.MathUtils.degToRad(lonDeg);
-    const radius = (R + altKm) / R * 0.1; // radioTierraEscena=0.1
-  const x = radius * Math.cos(lat) * Math.cos(lon);
-  const y = radius * Math.sin(lat);
-  const z = radius * Math.cos(lat) * Math.sin(lon) * this.LONGITUDE_SIGN;
-    return new THREE.Vector3(x, y, z);
-  }
+  // (Eliminada implementación duplicada de geographicToCartesian; usar la versión unificada más arriba)
 
   //endregion
 
-  //region Creation of orbits [rgba(0, 17, 249, 0.28)]
+
+
+  //region Geodesy [rgba(0, 17, 249, 0.28)]
 
   // Quick geodesy check helpers (Fase C)
   private quickCheckMarkers: THREE.Object3D[] = [];

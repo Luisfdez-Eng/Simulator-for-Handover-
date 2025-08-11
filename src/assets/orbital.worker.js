@@ -112,91 +112,45 @@ self.onmessage = function(e) {
       self.postMessage({ type: 'debug', payload: 'TLEs no inicializados' });
       return;
     }
-    const { date, frustumPlanes, uePosition } = payload;
+    const { date } = payload;
     const now = new Date(date);
-    
-    // 🎯 CORREGIDO: Cálculo más preciso del GMST
     const gmst = satellite.gstime(now);
-    
+
+    // Fase B: ECI-only. Se devuelve ECI en km + gmst. Sin escalado ni conversión a ECF.
     const satResults = tleDataCache.map(({ line1, line2 }, idx) => {
       const satrec = satellite.twoline2satrec(line1, line2);
       const prop = satellite.propagate(satrec, now);
       if (!prop.position) {
-        if (idx === 0) self.postMessage({ type: 'debug', payload: 'No position for satrec' });
-        return { position: { x: 0, y: 0, z: 0 }, visible: false, index: idx, distance: Infinity };
+        return { index: idx, eci_km: { x: 0, y: 0, z: 0 }, gmst, visible: false };
       }
-      
-      // 🎯 NUEVO: Calcular métricas orbitales (sin filtrado - mostrar todos los satélites)
-      const meanMotion = extractMeanMotion(line2);
-      const realHeight = calculateOrbitalHeight(meanMotion);
-      const realVelocity = calculateOrbitalVelocity(meanMotion);
-      
-      // 🎯 CORREGIDO: Usar coordenadas ECF que ya incluyen rotación terrestre
-      const ecf = satellite.eciToEcf(prop.position, gmst);
-      
-      // 🎯 NUEVO: Usar coordenadas reales directas del SGP4 sin escalas artificiales
-      // Las coordenadas ECF ya están en km, simplemente las normalizamos al sistema Three.js
-      const earthRadiusKm = 6371; // Radio de la Tierra en km
-      const visualEarthRadius = 0.1; // Radio visual de la Tierra en Three.js
-      const kmToVisualScale = visualEarthRadius / earthRadiusKm; // Factor de conversión km -> visual
-      
-      const position = {
-        x: ecf.x * kmToVisualScale, // Coordenadas reales convertidas a escala visual
-        y: ecf.y * kmToVisualScale,
-        z: ecf.z * kmToVisualScale
+      // Geodésico de referencia usando satellite.js (lat/lon rad)
+  const geo = satellite.eciToGeodetic(prop.position, gmst);
+      return {
+        index: idx,
+        eci_km: { x: prop.position.x, y: prop.position.y, z: prop.position.z },
+        gmst,
+        lat: geo.latitude, // rad
+        lon: geo.longitude, // rad
+        height: geo.height,
+        visible: true
       };
-      
-      let dist = uePosition ? distanceToUE(position, uePosition) : Infinity;
-      if (idx === 0) {
-        // Solo log cada 60 frames (~1 segundo) para reducir spam
-        if (!self.logFrameCounter) self.logFrameCounter = 0;
-        self.logFrameCounter++;
-        if (self.logFrameCounter % 60 === 0) {
-          const realVelocity = calculateOrbitalVelocity(meanMotion);
-          const magnitude = Math.sqrt(position.x * position.x + position.y * position.y + position.z * position.z);
-          const heightInSim = (magnitude / kmToVisualScale) - earthRadiusKm; // Altura calculada en el simulador
-          
-          self.postMessage({ 
-            type: 'debug', 
-            payload: `[REAL-COORDS] Sat 0: TLE_altura=${realHeight.toFixed(1)}km, SIM_altura=${heightInSim.toFixed(1)}km, vel=${realVelocity.toFixed(2)}km/s, pos_visual=(${position.x.toFixed(6)}, ${position.y.toFixed(6)}, ${position.z.toFixed(6)})` 
-          });
-        }
-      }
-      return { position, visible: true, index: idx, distance: dist };
     });
-    // Ordenar por distancia al UE
-    satResults.sort((a, b) => a.distance - b.distance);
-    // Chunks prioritarios y normales
-    const PRIORITY_CHUNK = 200;
-    const CHUNK_SIZE = 100;
-    let offset = 0;
-    // Enviar los más cercanos primero
-    let chunk = satResults.slice(0, PRIORITY_CHUNK);
-    self.postMessage({
-      type: 'propagation_chunk',
-      payload: {
-        chunk: chunk.map(s => ({ position: s.position, visible: s.visible })),
-        offset: 0,
-        total: satResults.length
-      }
-    });
-    offset += PRIORITY_CHUNK;
-    // Enviar el resto en chunks pequeños
-    while (offset < satResults.length) {
-      let chunk = satResults.slice(offset, offset + CHUNK_SIZE);
+
+    // Enviar en chunks secuenciales (orden original). Mantener estructura simple.
+    const CHUNK_SIZE = 200;
+    for (let offset = 0; offset < satResults.length; offset += CHUNK_SIZE) {
+      const chunk = satResults.slice(offset, offset + CHUNK_SIZE);
       self.postMessage({
         type: 'propagation_chunk',
         payload: {
-          chunk: chunk.map(s => ({ position: s.position, visible: s.visible })),
-          offset: offset,
+          chunk,
+          offset,
           total: satResults.length
         }
       });
-      offset += CHUNK_SIZE;
     }
-    // Finalmente, enviar el frame completo (orden original)
-    const ordered = Array(satResults.length);
-    satResults.forEach(s => { ordered[s.index] = { position: s.position, visible: s.visible }; });
-    self.postMessage({ type: 'propagation_complete', payload: ordered });
+
+    // Frame completo
+    self.postMessage({ type: 'propagation_complete', payload: satResults });
   }
 };

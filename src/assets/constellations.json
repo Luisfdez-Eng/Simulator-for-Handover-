@@ -1,0 +1,20 @@
+{
+  "constellations": [
+    { "name": "starlink",    "file": "gp_starlink.txt",    "label": "Starlink" },
+    { "name": "oneweb",      "file": "gp_oneweb.txt",      "label": "OneWeb" },
+  { "name": "amateurradio", "file": "gp_amateurradio.txt", "label": "Amateur Radio" },
+    { "name": "eutelsat",    "file": "gp_eutelsat.txt",    "label": "Eutelsat" },
+    { "name": "experimental","file": "gp_experimental.txt", "label": "Experimental" },
+    { "name": "galileo",     "file": "gp_galileo.txt",     "label": "Galileo" },
+    { "name": "globalstar",  "file": "gp_globalstar.txt",  "label": "Globalstar" },
+  { "name": "hulianwang", "file": "gp_hulianwang.txt", "label": "HuLianWang" },
+    { "name": "intelsat",    "file": "gp_intelsat.txt",    "label": "Intelsat" },
+    { "name": "iridium",     "file": "gp_iridium.txt",     "label": "Iridium" },
+    { "name": "kuiper",      "file": "gp_kuiper.txt",      "label": "Kuiper" },
+  { "name": "orbcomm",     "file": "gp_ORBCOMM.txt",     "label": "ORBCOMM" },
+  { "name": "quiafan",     "file": "gp_quiafan.txt",     "label": "QiaFan" },
+    { "name": "satnogs",     "file": "gp_satnogs.txt",     "label": "SatNOGS" },
+    { "name": "ses",         "file": "gp_ses.txt",         "label": "SES" },
+    { "name": "telesat",     "file": "gp_telesat.txt",     "label": "Telesat" }
+  ]
+}

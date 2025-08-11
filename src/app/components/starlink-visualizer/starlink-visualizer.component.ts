@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { TleLoaderService, SatData } from '../../services/tle-loader.service';
 import { MLHandoverService, SatelliteMetrics } from '../../services/ml-handover.service';
+import * as satellite from 'satellite.js';
 /**
  * ================================== CONVENCIÓN COORDENADAS (Fase C – cerrada) ==================================
  * Fuente de datos (worker): ECI (km) + GMST por frame.
@@ -24,6 +25,8 @@ import { MLHandoverService, SatelliteMetrics } from '../../services/ml-handover.
 // Enum de frame de vista para futura migración (Fase B)
 // TODO Fase B: Integrar cambio dinámico entre EarthFixed e Inertial cuando el worker entregue ECI puro
 enum ViewFrame { EarthFixed = 'earthfixed', Inertial = 'inertial' }
+// Modos de visualización de órbitas
+enum OrbitMode { Inertial = 'inertial', GroundTrack = 'groundtrack' }
 
 @Component({
   selector: 'app-starlink-visualizer',
@@ -94,6 +97,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private lastLogFrame: number = -1;
   private readonly LOG_EVERY_N_FRAMES = 60; // ~1 segundo si ~60fps
   private debugLogs = true; // Permite desactivar logs de validación
+  
+  // Estado de órbitas
+  private activeOrbitMode: OrbitMode | null = null;
+  private activeOrbitSatIndex: number | null = null;
+  private activeOrbitGroup: THREE.Group | null = null;
+  private lastGroundTrackGenFrame = -1;
 
   // Constantes de transformación (Fase B)
   private readonly KM_TO_SCENE = 0.1 / 6371; // Escala única km->escena
@@ -119,9 +128,17 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     (window as any).ngRef = this; // ⚠️ Sólo para desarrollo
     // Exponer THREE para que los snippets manuales en consola no fallen con "THREE is not defined"
     (window as any).THREE = THREE;
+    // Helpers de depuración para órbitas
+  (window as any).genOrbit = (i: number, m: 'groundtrack' | 'inertial' = 'groundtrack') => this.generateInstantOrbit(i, m === 'inertial' ? OrbitMode.Inertial : OrbitMode.GroundTrack);
+  // También colgamos en la instancia para ngRef.genOrbit()
+  (this as any).genOrbit = (i: number, m: 'groundtrack' | 'inertial' = 'groundtrack') => this.generateInstantOrbit(i, m === 'inertial' ? OrbitMode.Inertial : OrbitMode.GroundTrack);
+    (window as any).clearOrbit = () => this.clearOrbitalTraces();
+    (window as any).orbitInfo = () => this.getActiveOrbitInfo();
+    (window as any).setOrbitMode = (m: 'groundtrack' | 'inertial') => this.setOrbitMode(m);
     if ((window as any).ngRef) {
       console.log('[DEBUG] Componente StarlinkVisualizer expuesto como window.ngRef');
       console.log('[DEBUG] THREE expuesto como window.THREE');
+      console.log('[DEBUG] Orbit helpers: genOrbit(i,mode), clearOrbit(), setOrbitMode(mode), orbitInfo()');
     }
   }
 
@@ -399,6 +416,11 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // 🎯 NUEVO: Crear línea del satélite hacia la Tierra
     this.createSatelliteToEarthLine(index);
 
+  // 🔄 Generar órbita inmediata del satélite seleccionado (usa modo activo o groundtrack por defecto)
+  const modeToUse = this.activeOrbitMode ?? OrbitMode.GroundTrack;
+  console.log(`[ORBIT] Generando órbita inicial modo=${modeToUse} sat=${index}`);
+  this.generateInstantOrbit(index, modeToUse);
+
     // Obtener información del satélite
     const sats = this.tle.getAllSatrecs();
     if (sats[index]) {
@@ -431,8 +453,145 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
     // 🎯 ANTI-PARPADEO: Limpiar cache de posición
     this.selectedSatellitePosition = null;
+    // Si la órbita activa pertenece a este satélite, limpiar
+    if (this.activeOrbitSatIndex === this.selectedSatelliteIndex) {
+      this.clearOrbitalTraces();
+    }
     this.selectedSatelliteIndex = null;
   }
+
+
+  //region SGP4 Orbit Generation [rgba(78, 9, 241, 0.33)]
+  /** Establece modo de órbita y regenera si hay satélite activo. */
+  public setOrbitMode(mode: OrbitMode | 'inertial' | 'groundtrack') {
+    const newMode = mode as OrbitMode;
+    this.activeOrbitMode = newMode;
+    if (this.selectedSatelliteIndex != null) {
+      this.generateInstantOrbit(this.selectedSatelliteIndex, newMode);
+    }
+  }
+
+  /** Información del estado de órbita activo. */
+  public getActiveOrbitInfo(): { mode: OrbitMode | null; satIndex: number | null; pointCount: number } {
+    return {
+      mode: this.activeOrbitMode,
+      satIndex: this.activeOrbitSatIndex,
+      pointCount: (this.activeOrbitGroup && (this.activeOrbitGroup.children.find(c => (c as any).isLine) as any)?.geometry?.attributes?.position?.count) || 0
+    };
+  }
+
+  /** Limpia órbita activa. */
+  public clearOrbitalTraces() {
+    if (this.activeOrbitGroup) {
+      this.scene.remove(this.activeOrbitGroup);
+      this.activeOrbitGroup.traverse(obj => {
+        const m: any = obj;
+        if (m.geometry) m.geometry.dispose?.();
+        if (m.material) {
+          if (Array.isArray(m.material)) m.material.forEach((mm: any) => mm.dispose?.()); else m.material.dispose?.();
+        }
+      });
+      this.activeOrbitGroup = null;
+    }
+    this.activeOrbitSatIndex = null;
+  }
+
+  /** Genera órbita instantánea (una vez) para un satélite. */
+  public generateInstantOrbit(satelliteIndex: number, mode: OrbitMode = OrbitMode.GroundTrack, options?: { N?: number; periods?: number }) {
+    const satDataArr = this.tle.getAllSatrecs();
+    if (satelliteIndex < 0 || satelliteIndex >= satDataArr.length) { console.warn('[ORBIT] Índice inválido'); return; }
+    const satData = satDataArr[satelliteIndex];
+    if (!satData || !satData.satrec) { console.warn('[ORBIT] satrec no disponible'); return; }
+    const rawSatrec: any = satData.satrec;
+    const baseDate = this.useRealTime ? new Date() : this.simulatedDate;
+    const nRadPerMin = rawSatrec.no_kozai || rawSatrec.no; // rad/min
+    let periodMin: number;
+    if (nRadPerMin && isFinite(nRadPerMin)) periodMin = (2 * Math.PI) / nRadPerMin; else periodMin = 1440 / 15;
+    const T_ms = periodMin * 60 * 1000;
+    const N = options?.N ?? 720;
+    const periods = options?.periods ?? 1;
+    const points = this.sampleOrbitECI(rawSatrec, baseDate, T_ms, N, mode, periods);
+    this.drawOrbit(points, satelliteIndex, mode);
+    this.activeOrbitMode = mode;
+    this.activeOrbitSatIndex = satelliteIndex;
+  }
+
+  /** Regeneración ligera para groundtrack (cada ~2s). */
+  private generateDynamicOrbit(satelliteIndex: number) {
+    if (this.activeOrbitMode !== OrbitMode.GroundTrack) return;
+    if (satelliteIndex !== this.activeOrbitSatIndex) return;
+    if (this.frameId - this.lastGroundTrackGenFrame < 120) return;
+    this.lastGroundTrackGenFrame = this.frameId;
+    this.generateInstantOrbit(satelliteIndex, OrbitMode.GroundTrack);
+  }
+
+  /** Muestrea puntos orbitales propagando con SGP4 (satellite.js). */
+  private sampleOrbitECI(satrec: any, t0: Date, T_ms: number, N: number, mode: OrbitMode, periods = 1): THREE.Vector3[] {
+    const pts: THREE.Vector3[] = [];
+    const totalSamples = Math.max(2, N * periods);
+    const warn = { range: false };
+    const radii: number[] = [];
+    // Congelamos GMST inicial para lograr cierre en modo "groundtrack" (interpretado aquí como órbita a altura fija relativa a la Tierra inicial)
+    const gmst0 = satellite.gstime(t0);
+    for (let i = 0; i <= totalSamples; i++) {
+      const t_i = new Date(t0.getTime() + (i / totalSamples) * T_ms * periods);
+      const prop = satellite.propagate(satrec as any, t_i);
+      if (!prop || !prop.position) continue;
+      const eci: any = prop.position; // cast para acceder a x,y,z sin conflicto de tipos union
+      let pScene: THREE.Vector3;
+      const gmst_i = satellite.gstime(t_i);
+      if (mode === OrbitMode.GroundTrack) {
+        // Usar gmst inicial para todas las muestras -> órbita cerrada y sin deriva aparente
+        const ecf = this.eciToEcfLocal({ x: eci.x, y: eci.y, z: eci.z }, gmst0);
+        pScene = this.ecfToScene(ecf);
+      } else {
+        // Órbita inercial: si frame EarthFixed la mostramos "tal cual" en espacio EN ECI (sin rotar por gmst)
+        const eciVec = (this.viewFrame === ViewFrame.Inertial) ? { x: eci.x, y: eci.y, z: eci.z } : { x: eci.x, y: eci.y, z: eci.z };
+        // Si quisiéramos verla en EarthFixed podríamos aplicar rotación para que gire con la Tierra; por ahora dejamos ECI puro
+        const ecfOrEci = (this.viewFrame === ViewFrame.EarthFixed) ? { x: eciVec.x, y: eciVec.y, z: eciVec.z } : eciVec;
+        pScene = this.ecfToScene(ecfOrEci as any);
+      }
+      const r = pScene.length();
+      if (!isFinite(r) || r <= 0) { if (!warn.range) console.warn('[ORBIT-RANGE] r inválido', r); warn.range = true; continue; }
+      // Relajamos filtro inferior para diagnóstico (antes 0.101)
+      if ((r < 0.095 || r > 0.55) && !warn.range) { console.warn('[ORBIT-RANGE] r fuera', r.toFixed(5)); warn.range = true; }
+      pts.push(pScene);
+      radii.push(r);
+    }
+    if (mode === OrbitMode.Inertial && this.viewFrame === ViewFrame.Inertial && pts.length > 4) {
+      const gap = pts[0].distanceTo(pts[pts.length - 1]);
+      if (this.debugLogs) console.log('[ORBIT]', { mode, samples: pts.length, gap: gap.toFixed(6) });
+      if (gap < 0.002) pts.push(pts[0].clone());
+    } else if (this.debugLogs && pts.length > 1) {
+      const gap = pts[0].distanceTo(pts[pts.length - 1]);
+      console.log('[ORBIT]', { mode, samples: pts.length, gap: gap.toFixed(6), closed: false });
+    }
+    if (this.debugLogs && radii.length) {
+      const minR = Math.min(...radii).toFixed(6);
+      const maxR = Math.max(...radii).toFixed(6);
+      console.log(`[ORBIT] sampleOrbitECI done mode=${mode} samples=${pts.length} r[min,max]=[${minR},${maxR}]`);
+    }
+    return pts;
+  }
+
+  /** Dibuja línea orbital. */
+  private drawOrbit(points: THREE.Vector3[], satelliteIndex: number, mode: OrbitMode) {
+    if (this.selectedSatelliteIndex !== satelliteIndex) return;
+    this.clearOrbitalTraces();
+    if (!points.length) return;
+  console.log(`[ORBIT-DRAW] mode=${mode} satelliteIndex=${satelliteIndex} points=${points.length}`);
+    const group = new THREE.Group();
+    const geom = new THREE.BufferGeometry().setFromPoints(points);
+    const color = (mode === OrbitMode.Inertial) ? 0x00ff00 : 0x00ff00;
+    const mat = new THREE.LineBasicMaterial({ color, linewidth: 1, transparent: true, opacity: 0.9 });
+    const line = new THREE.Line(geom, mat); (line as any).isLine = true; group.add(line);
+    const markerGeom = new THREE.SphereGeometry(0.0015, 10, 10);
+    const markerMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const marker = new THREE.Mesh(markerGeom, markerMat);
+    marker.position.copy(points[0]); group.add(marker);
+    this.scene.add(group); this.activeOrbitGroup = group;
+  }
+  //endregion
 
   private createSelectedSatelliteIndicator(index: number) {
     if (!this.satsMesh) return;
@@ -1566,6 +1725,11 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
     // 🎯 ANTI-PARPADEO: Actualizar indicador de selección en cada frame para máxima suavidad
     this.updateSelectedSatelliteIndicator();
+
+    // 🔄 Regeneración dinámica de groundtrack (cada ~2s) si procede
+    if (this.activeOrbitMode === OrbitMode.GroundTrack && this.selectedSatelliteIndex != null) {
+      this.generateDynamicOrbit(this.selectedSatelliteIndex);
+    }
 
     this.renderer.render(this.scene, this.camera);
   };

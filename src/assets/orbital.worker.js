@@ -4,7 +4,8 @@
 importScripts('https://cdn.jsdelivr.net/npm/satellite.js@4.0.0/dist/satellite.min.js');
 
 const AU = 149597870.7; // km
-let tleDataCache = null; // Guardar TLEs en memoria
+let tleDataCache = null; // Guardar TLEs en memoria (líneas)
+let satrecsCache = null; // satrec precompilado para rendimiento
 
 // 🎯 NUEVO: Constantes físicas para cálculos orbitales precisos
 const G = 6.67430e-11; // N·m²/kg² - Constante gravitacional
@@ -86,39 +87,66 @@ self.onmessage = function(e) {
   const { type, payload } = e.data;
   if (type === 'init_tles') {
     tleDataCache = payload.tleData;
-    
-    // 🎯 NUEVO: Calcular métricas orbitales para cada satélite
-    console.log('[WORKER] Calculando métricas orbitales para', tleDataCache.length, 'satélites...');
-    
-    // Ejemplo con los primeros 3 satélites para validación
-    for (let i = 0; i < Math.min(3, tleDataCache.length); i++) {
-      const { line1, line2 } = tleDataCache[i];
-      const meanMotion = extractMeanMotion(line2);
-      const height = calculateOrbitalHeight(meanMotion);
-      const velocity = calculateOrbitalVelocity(meanMotion);
-      
-      console.log(`[ORBITAL-CALC] Satélite ${i}:`);
-      console.log(`  Mean Motion: ${meanMotion.toFixed(8)} rev/día`);
-      console.log(`  Altura calculada: ${height.toFixed(2)} km`);
-      console.log(`  Velocidad calculada: ${velocity.toFixed(3)} km/s`);
-      console.log(`  Período orbital: ${(86400/meanMotion/60).toFixed(1)} minutos`);
+    const t0 = performance.now();
+    satrecsCache = tleDataCache.map(({ line1, line2 }) => satellite.twoline2satrec(line1, line2));
+    const t1 = performance.now();
+    console.log(`[WORKER] satrecs compilados (${satrecsCache.length}) en ${(t1-t0).toFixed(1)} ms`);
+    // Métricas de los primeros 2 para validar
+    for (let i = 0; i < Math.min(2, satrecsCache.length); i++) {
+      const mm = satrecsCache[i].no_kozai || satrecsCache[i].no; // rad/min
+      if (mm) {
+        const periodMin = (2*Math.PI)/mm;
+        console.log(`[WORKER] Sat ${i} período≈${periodMin.toFixed(2)} min`);
+      }
     }
-    
+    // Propagación inicial inmediata (reduce tiempo "vacío" en UI)
+    const now = new Date();
+    const gmst = satellite.gstime(now);
+    const initialResults = [];
+    const CHUNK_SIZE_INIT = 200;
+    for (let idx = 0; idx < satrecsCache.length; idx++) {
+      const satrec = satrecsCache[idx];
+      const prop = satellite.propagate(satrec, now);
+      if (prop.position) {
+        const geo = satellite.eciToGeodetic(prop.position, gmst);
+        initialResults.push({
+          index: idx,
+          eci_km: { x: prop.position.x, y: prop.position.y, z: prop.position.z },
+          gmst,
+          lat: geo.latitude,
+          lon: geo.longitude,
+          height: geo.height,
+          visible: true
+        });
+      } else {
+        initialResults.push({ index: idx, eci_km: { x:0,y:0,z:0 }, gmst, visible:false });
+      }
+      if ((idx+1) % CHUNK_SIZE_INIT === 0) {
+        self.postMessage({ type:'propagation_chunk', payload:{ chunk: initialResults.slice(idx+1-CHUNK_SIZE_INIT, idx+1), offset: idx+1-CHUNK_SIZE_INIT, total: satrecsCache.length } });
+      }
+    }
+    // Enviar chunks restantes si no cayeron exactos
+    const remainder = initialResults.length % CHUNK_SIZE_INIT;
+    if (remainder) {
+      const start = initialResults.length - remainder;
+      self.postMessage({ type:'propagation_chunk', payload:{ chunk: initialResults.slice(start), offset: start, total: satrecsCache.length } });
+    }
+    self.postMessage({ type: 'propagation_complete', payload: initialResults });
     self.postMessage({ type: 'tles_ready' });
     return;
   }
   if (type === 'propagate') {
-    if (!tleDataCache) {
+    if (!satrecsCache) {
       self.postMessage({ type: 'debug', payload: 'TLEs no inicializados' });
       return;
     }
     const { date } = payload;
-    const now = new Date(date);
+    const now = new Date(date); // fecha objetivo exacta
     const gmst = satellite.gstime(now);
 
-    // Fase B: ECI-only. Se devuelve ECI en km + gmst. Sin escalado ni conversión a ECF.
-    const satResults = tleDataCache.map(({ line1, line2 }, idx) => {
-      const satrec = satellite.twoline2satrec(line1, line2);
+    const tProp0 = performance.now();
+    // ECI directo + gmst
+    const satResults = satrecsCache.map((satrec, idx) => {
       const prop = satellite.propagate(satrec, now);
       if (!prop.position) {
         return { index: idx, eci_km: { x: 0, y: 0, z: 0 }, gmst, visible: false };
@@ -135,6 +163,10 @@ self.onmessage = function(e) {
         visible: true
       };
     });
+    const tProp1 = performance.now();
+    if ((tProp1 - tProp0) > 200) {
+      console.log(`[WORKER] Propagación ${satrecsCache.length} sats en ${(tProp1-tProp0).toFixed(0)} ms`);
+    }
 
     // Enviar en chunks secuenciales (orden original). Mantener estructura simple.
     const CHUNK_SIZE = 200;

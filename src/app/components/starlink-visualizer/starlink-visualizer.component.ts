@@ -2,6 +2,8 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 // ✅ Aseguramos importaciones de Three.js y OrbitControls para disponer de tipos y exponerlos en window
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader';
 import { TleLoaderService, SatData } from '../../services/tle-loader.service';
 import { MLHandoverService, SatelliteMetrics } from '../../services/ml-handover.service';
 import * as satellite from 'satellite.js';
@@ -28,6 +30,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private worker: Worker | null = null;
   private lastWorkerFrameDate: Date = new Date();
   private workerBusy = false;
+  private lastPropagateSend = 0;
+  private lastLatencyMs = 0;
+  // === Compensación de retardo ===
+  private latencyEmaMs = 60; // EMA de latencia (~ms)
+  private predictionLeadFactor = 1.0; // Factor multiplicador sobre la EMA para pedir tiempo futuro
+  private readonly MAX_LEAD_MS = 400; // Tope duro para no sobre-extrapolar
+  private lastPropTargetTimeMs = 0; // Último instante (unix ms) pedido al worker
   private satellitesSnapshot: { index: number; eci_km: { x: number; y: number; z: number }; gmst: number; visible: boolean; lon?: number; lat?: number; height?: number }[] = [];
 
   currentMetrics: SatelliteMetrics | null = null; // 🎯 FORZADO: Mantener siempre null para interfaz limpia
@@ -43,10 +52,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   loadingEndTime: number = 0;
   loadingElapsedMs: number = 0;
 
-  private SAT_SCALE = 1200; // 🎯 AJUSTADO: Factor óptimo para satélites visibles (era 800, original 2399)
-  timeMultiplier = 1; // Control de velocidad temporal (x1 por defecto)
-  private simulatedDate = new Date();
-  private useRealTime = true; // 🎯 NUEVO: Flag para usar tiempo real vs simulado
+  private SAT_SCALE = 1200; // Escala satélites
+  private simulatedDate = new Date(); // Tiempo referencia último propagate
+  private useRealTime = true; // Siempre tiempo real
   private lastRealTimeUpdate = 0; // 🎯 NUEVO: Timestamp para control de actualización
   private earthMesh: THREE.Mesh | null = null;
   private earthWireframe: THREE.LineSegments | null = null;
@@ -59,14 +67,40 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private canvas2D!: HTMLCanvasElement;
   private context2D!: CanvasRenderingContext2D;
   private axesHelper: THREE.AxesHelper | null = null;
+  // ===== Earth render mode (classic sphere vs GLB model) =====
+  public earthMode: 'classic' | 'glb' = 'glb'; // Ahora por defecto GLB
+  private earthRoot: THREE.Object3D | null = null;   // Nodo root actual (malla clásica o GLB cargado)
+  private cloudLayer: THREE.Object3D | null = null;  // (nubes eliminadas de uso)
+  // Nubes eliminadas (showClouds eliminado)
+  private readonly EARTH_ROT_RATE = 2 * Math.PI / 86164; // rad/s (día sideral)
+  private lastFrameTime: number | null = null; // Para delta de rotación real
+  // Ajustes visuales de la textura (simple post-proceso en canvas)
+  // Ajustes visuales (solo aplicables a GLB, el modo clásico se deja intacto)
+  // Eliminados brillo/contraste y almacenamiento de imágenes originales
+  private readonly EARTH_BASE_YAW = Math.PI;    // 180° para alinear Greenwich con +X
   // Escala fija para etiqueta de satélite seleccionado cuando las etiquetas globales están ocultas
   private readonly SELECTED_LABEL_FIXED_SCALE = { x: 0.28, y: 0.075 };
+  // === PBR / Environment ===
+  private envHdrLoaded = false;                 // Evita recargar HDR
+  public glbPbrMode: boolean = true;            // público para binding (checkbox)
+  // Ajustes avanzados PBR
+  public pbrEnvMapIntensity = 3.0;  // Defaults según captura
+  public pbrRoughnessDelta = 0.8;
+  public pbrMetalnessDelta = -0.5;
+  private originalPbrParams: { material: any; roughness: number; metalness: number; envMapIntensity?: number }[] = [];
+  // Rim light eliminado
+  // Persistencia
+  private readonly STORAGE_KEY = 'sviz.settings.v1';
+  private texAdjustDebounceTimer: any = null;
+  // Exposición pública (wrapper) para template sin exponer renderer directamente
+  public get exposure(): number { return this.renderer ? this.renderer.toneMappingExposure : 1.0; }
+  public set exposure(v: number) { if (this.renderer) { this.onExposureChange(v); } }
 
   // 🎯 NUEVO: Sistema de selección y tracking de satélites
   private selectedSatelliteIndex: number | null = null; // Índice del satélite seleccionado
   private selectedSatelliteMesh: THREE.Mesh | null = null; // 🎯 NUEVO: Mesh separado para satélite seleccionado
   private selectedSatellitePosition: THREE.Vector3 | null = null; // 🎯 ANTI-PARPADEO: Cache de posición
-  private selectedSatelliteLine: THREE.Line | null = null; // 🎯 NUEVO: Línea del satélite a la Tierra
+  private selectedSatelliteLine: THREE.Object3D | null = null; // 🎯 Ahora un grupo con cilindro + marcador superficie
   private raycaster = new THREE.Raycaster(); // Para detección de clics en satélites
   private mouse = new THREE.Vector2(); // Posición del mouse normalizada
   private isMouseDown = false; // Flag para controlar interacciones de mouse
@@ -101,11 +135,17 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   ) { }
   async ngOnInit() {
     this.selectedConstellation = 'starlink';
+    // Cargar ajustes persistidos antes de inicializar escena
+    this.loadSettingsFromStorage();
     await this.tle.loadConstellation(this.selectedConstellation); // carga inicial
     this.initThree();
     this.initializeLabelSystem();
-    // Esperamos a que la Tierra (y su wireframe) estén creados antes de aplicar la config
-    await this.createEarth();
+    // Crear Tierra según modo persistido
+    if (this.earthMode === 'glb') {
+      await this.createEarthFromGLB();
+    } else {
+      await this.createEarth();
+    }
     this.createSatellites();
     this.createUE();
     // Aplicar configuración inicial (ocultar grid/ejes si están por defecto apagados)
@@ -122,6 +162,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     (window as any).clearOrbit = () => this.clearOrbitalTraces();
     (window as any).orbitInfo = () => this.getActiveOrbitInfo();
     (window as any).setOrbitMode = (m: 'groundtrack' | 'inertial') => this.setOrbitMode(m);
+    // Helpers de modo de Tierra (GLB / classic)
+    ;(window as any).setEarthMode = (m: 'classic' | 'glb') => this.setEarthMode(m);
+    ;(window as any).nudgeEarthYaw = (d: number) => this.nudgeEarthYaw(d);
+  // Helpers eliminados: nubes / brillo / contraste
+  ;(window as any).setGlbPbrMode = (v: boolean) => { this.glbPbrMode = v; console.log('[GLB-PBR] glbPbrMode ->', v); if (this.earthMode==='glb') this.setEarthMode('glb'); };
+  ;(window as any).setExposure = (e: number) => { this.renderer.toneMappingExposure = e; console.log('[RENDERER] exposure ->', e); };
     if ((window as any).ngRef) {
       console.log('[DEBUG] Componente StarlinkVisualizer expuesto como window.ngRef');
       console.log('[DEBUG] THREE expuesto como window.THREE');
@@ -147,7 +193,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     showAxes: false,
     showLabels: true,
     satColor: '#ff0000',
-    orbitColor: '#00ff00'
+    orbitColor: '#1f8f00'
   };
   public satelliteColorPalette: string[] = ['#ff0000', '#00ff00', '#00c8ff', '#ffaa00', '#ffffff', '#ff00ff', '#00ffa8'];
   public orbitColorPalette: string[] = ['#00ff00', '#ff0000', '#00c8ff', '#ffaa00', '#ffffff', '#ff00ff', '#00ffa8'];
@@ -161,6 +207,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.camera.lookAt(0, 0, 0);
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    // Configuración de color/tone mapping (soporte r152+ y fallback)
+    try {
+      if ((this.renderer as any).outputColorSpace !== undefined) (this.renderer as any).outputColorSpace = (THREE as any).SRGBColorSpace; else (this.renderer as any).outputEncoding = THREE.sRGBEncoding;
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.2;
+      console.log('[RENDERER] sRGB + ACES exposure=1.2');
+    } catch(e){ console.warn('[RENDERER] No se pudo configurar colorSpace/tonemapping', e); }
     // Añadir el canvas al contenedor del componente
     const container = document.querySelector('.canvas-container') || document.body;
     container.appendChild(this.renderer.domElement);
@@ -192,6 +245,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
     });
+  // Luces base (afectan sólo a materiales Standard/Physical)
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x202030, 0.9); hemi.name='__hemiLight'; this.scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(1,1,1); dir.name='__dirLight'; this.scene.add(dir);
   }
   //endregion
 
@@ -446,10 +502,21 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   public filteredResults: { index: number; label: string }[] = [];
   public showSearchDropdown = false;
   public selectedConstellation: string = 'starlink';
+  // Sugerencias incrementales
+  private suggestionMode = false;
+  private allSuggestionResults: { index: number; label: string }[] = [];
+  private suggestionBatchSize = 80;
+  private suggestionVisibleCount = 0;
 
   public onSearchChange() {
     const q = this.searchQuery.trim().toLowerCase();
-    if (!q) { this.filteredResults = []; this.showSearchDropdown = false; return; }
+    if (!q) {
+      this.suggestionMode = true;
+      // No retornar temprano si ya tenemos sugerencias: asegurar visible
+      this.prepareSuggestions();
+      return;
+    }
+    this.suggestionMode = false;
     const sats = this.tle.getAllSatrecs();
     const results: { index: number; label: string }[] = [];
     for (let i = 0; i < sats.length; i++) {
@@ -465,6 +532,36 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   public pickSearchResult(idx: number) {
     this.selectSatellite(idx);
     this.showSearchDropdown = false;
+  }
+  // Mostrar primeras 10 sugerencias al enfocar si no hay búsqueda
+  public onSearchFocus() {
+    if (this.searchQuery.trim() !== '') { this.onSearchChange(); return; }
+    this.suggestionMode = true;
+    this.prepareSuggestions();
+  }
+  private prepareSuggestions() {
+    const sats = this.tle.getAllSatrecs();
+    this.allSuggestionResults = [];
+    for (let i = 0; i < sats.length; i++) {
+      this.allSuggestionResults.push({ index: i, label: this.tle.getDisplayName(i) });
+    }
+    this.suggestionVisibleCount = Math.min(this.suggestionBatchSize, this.allSuggestionResults.length);
+    this.filteredResults = this.allSuggestionResults.slice(0, this.suggestionVisibleCount);
+    this.showSearchDropdown = true;
+  }
+  public onSearchScroll(ev: any) {
+    if (!this.suggestionMode) return;
+    const el = ev.target as HTMLElement;
+    const threshold = 24; // px antes del final
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - threshold) {
+      if (this.suggestionVisibleCount < this.allSuggestionResults.length) {
+        const prev = this.suggestionVisibleCount;
+        this.suggestionVisibleCount = Math.min(this.suggestionVisibleCount + this.suggestionBatchSize, this.allSuggestionResults.length);
+        // Añadir los nuevos sin recrear todo
+        this.filteredResults = this.allSuggestionResults.slice(0, this.suggestionVisibleCount);
+        if (this.debugLogs) console.log(`[SEARCH] Expand sugerencias ${prev} -> ${this.suggestionVisibleCount}`);
+      }
+    }
   }
   public async changeConstellation(newConstellation: string) {
     const prevSelected = this.selectedConstellation;
@@ -579,49 +676,45 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
   private createSatelliteToEarthLine(index: number) {
     if (!this.satsMesh) return;
-
-    console.log(`[SATELLITE-LINE] 🌍 Creando línea del satélite ${index} hacia la Tierra`);
-
-    // Obtener posición del satélite seleccionado
+    // Eliminar previa si existiera
+    this.removeSatelliteToEarthLine();
     const tempMatrix = new THREE.Matrix4();
-    const satellitePosition = new THREE.Vector3();
+    const satPos = new THREE.Vector3();
     this.satsMesh.getMatrixAt(index, tempMatrix);
-    satellitePosition.setFromMatrixPosition(tempMatrix);
-
-    // Centro de la Tierra
-    const earthCenter = new THREE.Vector3(0, 0, 0);
-
-    // Calcular dirección del satélite hacia el centro de la Tierra
-    const directionToEarth = earthCenter.clone().sub(satellitePosition).normalize();
-
-    // Calcular punto en la superficie de la Tierra (radio = 0.1)
+    satPos.setFromMatrixPosition(tempMatrix);
+    const earthCenter = new THREE.Vector3(0,0,0);
+    const dist = satPos.distanceTo(earthCenter);
     const earthRadius = 0.1;
-    const earthSurfacePoint = satellitePosition.clone().add(directionToEarth.multiplyScalar(satellitePosition.distanceTo(earthCenter) - earthRadius));
-
-    // Crear geometría de línea
-    const points = [
-      satellitePosition.clone(),
-      earthSurfacePoint.clone()
-    ];
-
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-
-    // Material de línea verde brillante
-    const material = new THREE.LineBasicMaterial({
-      color: this.cfg.orbitColor || '#00ff00',
-      linewidth: 2,
-      transparent: true,
-      opacity: 0.8
-    });
-
-    // Crear línea
-    this.selectedSatelliteLine = new THREE.Line(geometry, material);
-    this.selectedSatelliteLine.renderOrder = 2; // Renderizar después del satélite
-
-    // Añadir a la escena
-    this.scene.add(this.selectedSatelliteLine);
-
-    console.log(`[SATELLITE-LINE] ✅ Línea creada desde satélite (${satellitePosition.x.toFixed(4)}, ${satellitePosition.y.toFixed(4)}, ${satellitePosition.z.toFixed(4)}) hacia superficie terrestre (${earthSurfacePoint.x.toFixed(4)}, ${earthSurfacePoint.y.toFixed(4)}, ${earthSurfacePoint.z.toFixed(4)})`);
+    if (dist <= earthRadius) return; // seguridad
+    const dirToCenter = earthCenter.clone().sub(satPos).normalize();
+    const surfacePoint = satPos.clone().add(dirToCenter.clone().multiplyScalar(dist - earthRadius));
+    // Longitud del segmento atmosférico
+    const segmentLength = satPos.distanceTo(surfacePoint);
+    // Grupo contenedor
+    const group = new THREE.Group();
+    // Cilindro orientado: eje Y local será la dirección
+    const radius = Math.min(0.00035, segmentLength * 0.18); // grosor relativo + límite
+    const cylGeo = new THREE.CylinderGeometry(radius, radius, segmentLength, 12, 1, true);
+    const cylMat = new THREE.MeshBasicMaterial({ color: this.cfg.orbitColor || '#00ff00', transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
+    const cylinder = new THREE.Mesh(cylGeo, cylMat);
+    // Posicionar centro del cilindro en mitad del segmento
+    const mid = satPos.clone().add(surfacePoint).multiplyScalar(0.5);
+    cylinder.position.copy(mid);
+    // Orientar: cilindro por defecto apunta a +Y. Crear quaternion desde +Y hacia vector (surfacePoint - satPos)
+    const up = new THREE.Vector3(0,1,0);
+    const segDir = surfacePoint.clone().sub(satPos).normalize();
+    const quat = new THREE.Quaternion().setFromUnitVectors(up, segDir);
+    cylinder.setRotationFromQuaternion(quat);
+    group.add(cylinder);
+    // Marcador en superficie
+    const markerGeo = new THREE.SphereGeometry(radius*1.15, 10, 10);
+    const markerMat = new THREE.MeshBasicMaterial({ color: this.cfg.orbitColor || '#00ff00', transparent: true, opacity: 0.85, depthTest: false, depthWrite: false });
+    const marker = new THREE.Mesh(markerGeo, markerMat);
+    marker.position.copy(surfacePoint);
+    group.add(marker);
+    group.renderOrder = 2; // detrás del indicador seleccionado pero sobre Tierra
+    this.scene.add(group);
+    this.selectedSatelliteLine = group;
   }
   private removeSelectedSatelliteIndicator() {
     if (this.selectedSatelliteMesh) {
@@ -637,43 +730,58 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     }
   }
   private removeSatelliteToEarthLine() {
-    if (this.selectedSatelliteLine) {
-      console.log(`[SATELLITE-LINE] 🗑️ Eliminando línea hacia la Tierra`);
-      this.scene.remove(this.selectedSatelliteLine);
-
-      // Limpiar geometría y material
-      this.selectedSatelliteLine.geometry.dispose();
-      if (this.selectedSatelliteLine.material instanceof THREE.Material) {
-        this.selectedSatelliteLine.material.dispose();
+    if (!this.selectedSatelliteLine) return;
+    this.selectedSatelliteLine.traverse(obj => {
+      const mesh:any = obj;
+      if (mesh.isMesh) {
+        mesh.geometry?.dispose?.();
+        if (Array.isArray(mesh.material)) mesh.material.forEach((m:any)=>m.dispose?.()); else mesh.material?.dispose?.();
       }
-      this.selectedSatelliteLine = null;
-    }
+    });
+    this.scene.remove(this.selectedSatelliteLine);
+    this.selectedSatelliteLine = null;
   }
   private updateSatelliteToEarthLine(satellitePosition: THREE.Vector3) {
     if (!this.selectedSatelliteLine) return;
-
     try {
-      // Centro de la Tierra
-      const earthCenter = new THREE.Vector3(0, 0, 0);
-
-      // Calcular dirección del satélite hacia el centro de la Tierra
-      const directionToEarth = earthCenter.clone().sub(satellitePosition).normalize();
-
-      // Calcular punto en la superficie de la Tierra (radio = 0.1)
+      const earthCenter = new THREE.Vector3(0,0,0);
+      const dist = satellitePosition.distanceTo(earthCenter);
       const earthRadius = 0.1;
-      const earthSurfacePoint = satellitePosition.clone().add(directionToEarth.multiplyScalar(satellitePosition.distanceTo(earthCenter) - earthRadius));
-
-      // Actualizar puntos de la línea
-      const points = [
-        satellitePosition.clone(),
-        earthSurfacePoint.clone()
-      ];
-
-      // Actualizar geometría
-      this.selectedSatelliteLine.geometry.setFromPoints(points);
-      this.selectedSatelliteLine.geometry.attributes['position'].needsUpdate = true;
-    } catch (error) {
-      console.warn(`[SATELLITE-LINE] Error actualizando línea: ${error}`);
+      if (dist <= earthRadius) return; // seguridad
+      const surfacePoint = satellitePosition.clone().add(
+        earthCenter.clone().sub(satellitePosition).normalize().multiplyScalar(dist - earthRadius)
+      );
+      const segmentLength = satellitePosition.distanceTo(surfacePoint);
+      // Buscar cilindro dentro del grupo
+  let cylinder: THREE.Mesh<any, any> | null = null;
+  this.selectedSatelliteLine.children.forEach(c => { const m:any = c as any; if (m.isMesh && m.geometry?.type === 'CylinderGeometry') cylinder = m as THREE.Mesh; });
+      if (!cylinder) return;
+      // Re-crear geometría (simple y barato para un objeto)
+      const radius = Math.min(0.00035, segmentLength * 0.18);
+      const newGeo = new THREE.CylinderGeometry(radius, radius, segmentLength, 12, 1, true);
+      const cyl = cylinder as THREE.Mesh;
+      (cyl as any).geometry?.dispose?.();
+      (cyl as any).geometry = newGeo;
+      const mid = satellitePosition.clone().add(surfacePoint).multiplyScalar(0.5);
+      cyl.position.copy(mid);
+      const up = new THREE.Vector3(0,1,0);
+      const segDir = surfacePoint.clone().sub(satellitePosition).normalize();
+      cyl.setRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(up, segDir));
+      // Superficie marker
+  let marker: THREE.Mesh<any, any> | null = null;
+  this.selectedSatelliteLine.children.forEach(c => { const m:any = c as any; if (m.isMesh && m.geometry?.type === 'SphereGeometry') marker = m as THREE.Mesh; });
+      if (marker) {
+        const mark = marker as THREE.Mesh;
+        mark.position.copy(surfacePoint);
+        // Si el radio cambió sustancialmente, recrear
+        const mr:any = mark;
+        if (Math.abs((mr.geometry.parameters?.radius ?? 0) - radius*1.15) / (radius*1.15) > 0.2) {
+          mr.geometry.dispose();
+          mr.geometry = new THREE.SphereGeometry(radius*1.15, 10, 10);
+        }
+      }
+    } catch(e) {
+      console.warn('[SATELLITE-LINE] Error actualizando cilindro', e);
     }
   }
   private updateSelectedSatelliteIndicator() {
@@ -1261,6 +1369,41 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // 🎯 ELIMINADO: Ya no necesitamos restaurar colores porque usamos mesh separado
     // this.restoreColorsAfterMatrixUpdate();
   }
+  // Ajuste ligero de brillo y contraste en una textura existente (canvas intermedio)
+  private processEarthTexture(tex: THREE.Texture, brightness: number, contrast: number): THREE.Texture {
+    try {
+      const image = tex.image as HTMLImageElement | HTMLCanvasElement;
+      if (!image) return tex;
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width; canvas.height = image.height;
+      const ctx = canvas.getContext('2d'); if (!ctx) return tex;
+      ctx.drawImage(image, 0, 0);
+      const imgData = ctx.getImageData(0,0,canvas.width, canvas.height);
+      const data = imgData.data;
+      // Contraste: fórmula estándar ((x-128)*c+128) donde c = contrast
+      const c = contrast;
+      for (let i=0;i<data.length;i+=4){
+        // brillo
+        data[i]   = Math.min(255, Math.max(0, data[i]*brightness));
+        data[i+1] = Math.min(255, Math.max(0, data[i+1]*brightness));
+        data[i+2] = Math.min(255, Math.max(0, data[i+2]*brightness));
+        // contraste
+        data[i]   = Math.min(255, Math.max(0, (data[i]-128)*c + 128));
+        data[i+1] = Math.min(255, Math.max(0, (data[i+1]-128)*c + 128));
+        data[i+2] = Math.min(255, Math.max(0, (data[i+2]-128)*c + 128));
+      }
+      ctx.putImageData(imgData,0,0);
+      const newTex = new THREE.CanvasTexture(canvas);
+      newTex.encoding = THREE.sRGBEncoding;
+      newTex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+      newTex.needsUpdate = true;
+      // Liberar anterior
+      tex.dispose();
+      return newTex;
+    } catch(e){
+      console.warn('[EARTH] processEarthTexture error', e); return tex;
+    }
+  }
   private calculateSmartLabelOffset(satellitePosition: THREE.Vector3, index: number, cameraDistance: number): THREE.Vector3 {
     // Offset base muy pequeño para mantener las etiquetas pegadas
     let baseOffset = 0.0001; // Mucho más pequeño que antes
@@ -1375,6 +1518,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   public setViewFrame(frame: 'earthfixed' | 'inertial') {
     if (frame === 'earthfixed') this.viewFrame = ViewFrame.EarthFixed; else this.viewFrame = ViewFrame.Inertial;
     console.log(`[VIEW-FRAME] Cambiado a ${this.viewFrame}`);
+    // Reset rotación tierra si cambiamos a EarthFixed
+    if (this.viewFrame === ViewFrame.EarthFixed && this.earthRoot) this.earthRoot.rotation.y = this.EARTH_BASE_YAW;
+    // Regenerar órbita seleccionada para evitar distorsión anterior
+    if (this.selectedSatelliteIndex != null && this.activeOrbitMode) {
+      this.generateInstantOrbit(this.selectedSatelliteIndex, this.activeOrbitMode);
+    }
   }
   public setDebugLogs(enabled: boolean) {
     this.debugLogs = enabled;
@@ -1392,11 +1541,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
     // � NASA BLUE MARBLE: Textura profesional con calibración astronómica
     const loader = new THREE.TextureLoader();
+  // Modo clásico: NO alterar brillo/contraste; textura tal cual
+  const originalImageHolder: { img?: HTMLImageElement } = {};
     this.earthTexture = await new Promise<THREE.Texture>((resolve, reject) => {
       loader.load(
         'assets/blue_marble_nasa_proper.jpg', // 🎯 NUEVA: Blue Marble NASA calibrada
         (texture) => {
           console.log('[EARTH] Blue Marble NASA calibrada cargada exitosamente');
+          originalImageHolder.img = texture.image as HTMLImageElement;
           resolve(texture);
         },
         (progress) => {
@@ -1406,9 +1558,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
           console.error('[EARTH] Error cargando Blue Marble NASA:', error);
           // Fallback a texturas de respaldo en orden de preferencia
           loader.load('assets/earth_4k_hd.jpg',
-            resolve,
+            (texture2) => { originalImageHolder.img = texture2.image as HTMLImageElement; resolve(texture2); },
             undefined,
-            () => loader.load('assets/earth_continents_bw.png', resolve, undefined, reject)
+            () => loader.load('assets/earth_continents_bw.png', (texture3) => { originalImageHolder.img = texture3.image as HTMLImageElement; resolve(texture3); }, undefined, reject)
           );
         }
       );
@@ -1437,34 +1589,293 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.earthTexture.needsUpdate = true;
     console.log('[EARTH] ✅ Textura sin mirror. Offset base lon0=0 -> offset.x=0');
 
-    // 🎯 MATERIAL MEJORADO con configuración astronómica
-    const mat = new THREE.MeshBasicMaterial({
-      map: this.earthTexture,
-      transparent: false,
-      opacity: 1.0,
-      side: THREE.FrontSide // Solo cara frontal para mejor rendimiento
-    });
+
+    // Post-proceso sencillo de brillo/contraste (sólo si tenemos imagen original)
+    try {
+      if (originalImageHolder.img) {
+  // (Ajuste brillo/contraste eliminado)
+      }
+    } catch (e) {
+      console.warn('[EARTH] Post-proceso de textura falló, usando textura original', e);
+    }
+
+    // 🎯 MATERIAL: seguimos con MeshBasic para mantener rendimiento y evitar dependencia de luces
+    const mat = new THREE.MeshBasicMaterial({ map: this.earthTexture, transparent: false, opacity: 1.0, side: THREE.FrontSide });
 
     this.earthMesh = new THREE.Mesh(geo, mat);
 
     // 🎯 Rotación base fija (ya no es necesario llamar setEarthGeometryLonRotation(180) manualmente)
     this.earthMesh.rotation.set(0, 0, 0); // eliminamos rotación base acumulativa
 
-    this.scene.add(this.earthMesh);
+  this.scene.add(this.earthMesh);
+  // Unificar referencia para gestión de modos (classic)
+  this.earthRoot = this.earthMesh;
     // Wireframe moderno
     const wireframe = new THREE.WireframeGeometry(geo);
     this.earthWireframe = new THREE.LineSegments(wireframe, new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 }));
     // Aplicar misma rotación al wireframe
     this.earthWireframe.rotation.set(0, 0, 0);
     this.earthWireframe.renderOrder = 1;
-    this.scene.add(this.earthWireframe);
+  this.scene.add(this.earthWireframe);
     // Visibilidad inicial conforme a la config (showGrid=false => oculto)
     this.earthWireframe.visible = this.cfg.showGrid;
     if (this.earthGrid) this.earthGrid.visible = this.cfg.showGrid;
-
-
-
   }
+
+  // =================== EARTH GLB MODE ===================
+  // Carga alternativa de Tierra usando GLB sin alterar pipeline de coordenadas (radio final 0.1 como classic)
+  private async createEarthFromGLB() {
+    console.log('[EARTH-GLB] Iniciando carga GLB');
+    const loader = new GLTFLoader();
+    return new Promise<void>((resolve) => {
+      loader.load(
+        'assets/models/earth/earth.glb',
+        (gltf) => {
+          try {
+            const root = gltf.scene || gltf.scenes[0];
+            if (!root) throw new Error('Escena GLB vacía');
+            root.position.set(0,0,0);
+            root.rotation.set(0,this.EARTH_BASE_YAW,0); // Aplicar yaw base igual que modo clásico
+            // Calcular bounding box para escalar a radio=0.1 (calibración identica a esfera clásica)
+            const box = new THREE.Box3().setFromObject(root);
+            const size = box.getSize(new THREE.Vector3());
+            // Aproximar radio desde el tamaño diagonal / 2 o usar componente mayor
+            const approxRadius = size.length() / 2 || Math.max(size.x,size.y,size.z)/2 || 1;
+            const scale = 0.185 / approxRadius;
+            root.scale.setScalar(scale);
+            // Ajustes de materiales
+            const maxAniso = this.renderer.capabilities.getMaxAnisotropy();
+            // (Imágenes originales eliminadas)
+            root.traverse(obj => {
+              const mesh = obj as any;
+              if (mesh.material) {
+                const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                materials.forEach((m: any) => {
+      if (!this.glbPbrMode) return; // En modo plano convertiremos despues
+                  if (m.map) {
+                    m.map.encoding = THREE.sRGBEncoding;
+                    m.map.anisotropy = maxAniso;
+                    m.map.needsUpdate = true;
+                    // (almacenamiento de imagen original eliminado)
+                  }
+                  if (m.emissiveMap) {
+                    m.emissiveMap.encoding = THREE.sRGBEncoding;
+                    m.emissiveMap.anisotropy = maxAniso;
+                    m.emissiveMap.needsUpdate = true;
+                    // (almacenamiento de imagen original eliminado)
+                  }
+                  m.needsUpdate = true;
+                });
+              }
+            });
+    if (!this.glbPbrMode) { this.convertGlbMaterialsToBasic(root, maxAniso); console.log('[EARTH-GLB] Materiales convertidos a MeshBasic (modo plano)'); } else { this.loadEnvironmentIfNeeded(); }
+            // Aplicar ajustes iniciales (1.0 => sin cambio). Si usuario modificó antes, reaplicar.
+            // (Ajuste brillo/contraste eliminado)
+            
+            // Detectar capas de nubes / atmósfera por nombre
+            this.cloudLayer = null;
+            root.traverse(o => {
+              if (!this.cloudLayer && /cloud|atmos/i.test(o.name)) this.cloudLayer = o;
+            });
+            // (Nubes eliminadas)
+            root.frustumCulled = true;
+            this.scene.add(root);
+            this.earthRoot = root;
+            this.earthMesh = null; // No hay esfera clásica
+            // Ocultar wireframe grid si existían del modo anterior
+            if (this.earthWireframe) { this.scene.remove(this.earthWireframe); this.earthWireframe.geometry.dispose(); (this.earthWireframe.material as any).dispose?.(); this.earthWireframe = null; }
+            console.log('[EARTH-GLB] Cargado y escalado. Radio target=0.1');
+            // Captura parámetros PBR originales
+            this.originalPbrParams = [];
+            if (this.glbPbrMode) {
+              root.traverse(o => {
+                const mesh:any = o;
+                if (mesh.material) {
+                  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                  mats.forEach((m:any) => {
+                    if (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) {
+                      this.originalPbrParams.push({ material: m, roughness: m.roughness ?? 0.5, metalness: m.metalness ?? 0.0, envMapIntensity: m.envMapIntensity });
+                    }
+                  });
+                }
+              });
+            }
+            this.updateToneMappingForMode();
+            if (this.glbPbrMode) this.applyPbrAdjustments();
+          } catch (e) {
+            console.error('[EARTH-GLB] Error procesando GLB, fallback a modo clásico', e);
+            this.setEarthMode('classic');
+          }
+          resolve();
+        },
+        undefined,
+        (err) => {
+          console.error('[EARTH-GLB] Fallo cargando GLB:', err);
+          console.warn('[EARTH-GLB] Fallback a modo clásico');
+          this.setEarthMode('classic');
+          resolve();
+        }
+      );
+    });
+  }
+
+  // Elimina la Tierra actual (classic o GLB) liberando recursos.
+  private destroyEarth() {
+    if (this.earthRoot) {
+      const toDispose: THREE.Object3D[] = [];
+      this.earthRoot.traverse(o => { toDispose.push(o); });
+      toDispose.forEach(o => {
+        const mesh = o as any;
+        if (mesh.geometry) mesh.geometry.dispose?.();
+        if (mesh.material) {
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          mats.forEach((m: any) => m && m.dispose && m.dispose());
+        }
+      });
+      this.scene.remove(this.earthRoot);
+      this.earthRoot = null;
+    }
+    if (this.earthWireframe) {
+      this.scene.remove(this.earthWireframe);
+      this.earthWireframe.geometry.dispose();
+      (this.earthWireframe.material as any).dispose?.();
+      this.earthWireframe = null;
+    }
+    // No tocamos earthGrid porque no se usa actualmente (placeholder)
+    this.earthMesh = null;
+    this.earthTexture = null;
+    this.cloudLayer = null;
+  }
+
+  public async setEarthMode(mode: 'classic'|'glb') {
+    if (mode === this.earthMode) { console.log('[EARTH] Modo ya activo:', mode); return; }
+    console.log('[EARTH] Cambiando modo ->', mode);
+    this.destroyEarth();
+    if (mode === 'classic') {
+      await this.createEarth();
+      this.earthMode = 'classic';
+      // Reaplicar config de grid/wireframe
+      this.applyConfig();
+  this.updateToneMappingForMode();
+    } else {
+      await this.createEarthFromGLB();
+  // Si el GLB falló y se hizo fallback, earthRoot será la esfera clásica
+  this.earthMode = (this.earthRoot && !(this.earthRoot as any).isMesh) ? 'glb' : (this.earthRoot ? (this.earthRoot === this.earthMesh ? 'classic':'glb') : 'classic');
+  if (this.earthMode === 'classic') this.applyConfig();
+  this.updateToneMappingForMode();
+    }
+  }
+
+  public nudgeEarthYaw(delta: number) { if (this.earthRoot) this.earthRoot.rotation.y += delta; }
+  // Nubes eliminadas
+  // toggleAutoRotate redefinido más abajo
+  // Controles de auto-rotar y velocidad eliminados
+  public onEarthModeChange(val: string) { const mode = (val === 'glb') ? 'glb' : 'classic'; this.setEarthMode(mode); this.saveSettings(); }
+  // PBR métodos redefinidos más abajo
+  public onPbrParamsChange() { this.applyPbrAdjustments(); this.saveSettings(); }
+  public resetPbrAdjustments() {
+    // Restaurar baseline solicitado (3.0, 0.8, -0.5)
+    this.pbrEnvMapIntensity = 3.0;
+    this.pbrRoughnessDelta = 0.8;
+    this.pbrMetalnessDelta = -0.5;
+    this.applyPbrAdjustments();
+    this.saveSettings();
+  }
+  // toggleRimLight eliminado de UI
+  // API pública para ajustar brillo/contraste GLB
+  // (Métodos brillo/contraste eliminados)
+  public onExposureChange(e: number) { this.renderer.toneMappingExposure = e; this.saveSettings(); }
+  // --- Utilidades PBR / Environment ---
+  private convertGlbMaterialsToBasic(root: THREE.Object3D, maxAniso: number) {
+    root.traverse(o => {
+      const mesh: any = o;
+      if (mesh.isMesh && mesh.material) {
+        const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        const converted: any[] = [];
+        mats.forEach((m:any) => {
+          const baseMap = m.map || null;
+          const basic = new THREE.MeshBasicMaterial({ map: baseMap, transparent: !!m.transparent });
+          if (basic.map) { basic.map.encoding = THREE.sRGBEncoding; basic.map.anisotropy = maxAniso; basic.map.needsUpdate = true; }
+          converted.push(basic); if (m.dispose) m.dispose();
+        });
+        mesh.material = Array.isArray(mesh.material) ? converted : converted[0];
+      }
+    });
+  }
+  private loadEnvironmentIfNeeded() {
+    if (this.envHdrLoaded || !this.glbPbrMode) return;
+    const hdrPath = 'assets/env/studio_small_08_1k.hdr';
+    new RGBELoader().load(hdrPath, tex => {
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      this.scene.environment = tex;
+      console.log('[ENV] HDRI cargado', hdrPath);
+      this.envHdrLoaded = true;
+  this.applyPbrAdjustments();
+    }, undefined, err => console.warn('[ENV] Error HDRI', hdrPath, err));
+  }
+  private updateToneMappingForMode() {
+    if (!this.renderer) return;
+    if (this.earthMode === 'glb' && this.glbPbrMode) {
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 2.0; // Fijo solicitado
+    } else {
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.0;
+    }
+    console.log('[RENDERER] ToneMapping -> mode='+this.earthMode+' pbr='+this.glbPbrMode+' exposure='+this.renderer.toneMappingExposure);
+    this.saveSettings();
+  }
+
+  private applyPbrAdjustments() {
+    if (!this.earthRoot || !this.glbPbrMode) return;
+    if (!this.originalPbrParams.length) return;
+    this.originalPbrParams.forEach(entry => {
+      const m:any = entry.material;
+      if (!(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial)) return;
+      m.roughness = THREE.MathUtils.clamp(entry.roughness + this.pbrRoughnessDelta, 0,1);
+      m.metalness = THREE.MathUtils.clamp(entry.metalness + this.pbrMetalnessDelta, 0,1);
+      m.envMapIntensity = (entry.envMapIntensity ?? 1) * this.pbrEnvMapIntensity;
+      m.needsUpdate = true;
+    });
+  }
+
+  // =================== Persistencia ===================
+  private loadSettingsFromStorage() {
+    try {
+      const raw = localStorage.getItem(this.STORAGE_KEY); if (!raw) return;
+      const obj = JSON.parse(raw);
+      if (obj.earthMode) this.earthMode = obj.earthMode === 'glb' ? 'glb' : 'classic';
+      if (typeof obj.glbPbrMode === 'boolean') this.glbPbrMode = obj.glbPbrMode;
+  // brillo/contraste eliminados
+  // showClouds eliminado
+  // autoRotate/earthRotateSpeed obsoletos (ignorados si existen)
+  // Exposición ya fija para GLB PBR y 1.0 para classic
+      console.log('[PERSIST] Ajustes cargados');
+  if (typeof obj.pbrEnvMapIntensity === 'number') this.pbrEnvMapIntensity = obj.pbrEnvMapIntensity;
+  if (typeof obj.pbrRoughnessDelta === 'number') this.pbrRoughnessDelta = obj.pbrRoughnessDelta;
+  if (typeof obj.pbrMetalnessDelta === 'number') this.pbrMetalnessDelta = obj.pbrMetalnessDelta;
+  // timeMultiplier obsoleto
+    } catch(e){ console.warn('[PERSIST] Error cargando settings', e); }
+  }
+  private saveSettings() {
+    try {
+      const data = {
+        earthMode: this.earthMode,
+        glbPbrMode: this.glbPbrMode,
+  // brightness/contrast eliminados
+  // showClouds eliminado
+  // autoRotateEarth y earthRotateSpeed eliminados
+  // exposure omitido (ya fijo por modo)
+        pbrEnvMapIntensity: this.pbrEnvMapIntensity,
+        pbrRoughnessDelta: this.pbrRoughnessDelta,
+        pbrMetalnessDelta: this.pbrMetalnessDelta,
+  // timeMultiplier eliminado
+      };
+      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data));
+    } catch(e){ /* ignorar */ }
+  }
+
+  
   private createSatellites() {
     const sats = this.tle.getAllSatrecs();
     console.log(`[INIT] Creando ${sats.length} satélites`);
@@ -1505,22 +1916,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // Configurar el handler del worker UNA SOLA VEZ
     this.worker.onmessage = ({ data }) => {
       if (data.type === 'tles_ready') {
-        console.log('[WORKER] TLEs ready, enviando primer propagate');
-        this.workerBusy = false;
-        const frustumPlanes = this.updateFrustum();
-        this.workerBusy = true;
-        this.worker?.postMessage({
-          type: 'propagate',
-          payload: {
-            date: this.simulatedDate.toISOString(),
-            frustumPlanes,
-            uePosition: {
-              x: this.ueMesh.position.x,
-              y: this.ueMesh.position.y,
-              z: this.ueMesh.position.z
-            }
-          }
-        });
+        console.log('[WORKER] TLEs ready (propagación inicial ya recibida por chunks)');
+        this.workerBusy = false; // permitir siguiente ciclo normal
       }
       else if (data.type === 'debug') {
         const debugMsg = data.payload;
@@ -1544,7 +1941,27 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         }
       }
       else if (data.type === 'propagation_complete' || data.type === 'propagation_result') {
+        // Actualizar posiciones
         this.updateSatellitePositions(data.payload);
+        // Latencia medida envío->recepción
+        const nowPerf = performance.now();
+        this.lastLatencyMs = nowPerf - this.lastPropagateSend;
+        // Actualizar EMA (suavizado fuerte)
+        this.latencyEmaMs = 0.9 * this.latencyEmaMs + 0.1 * this.lastLatencyMs;
+        // Edad efectiva del snapshot respecto al instante objetivo que pedimos
+        const ageMs = Date.now() - this.lastPropTargetTimeMs; // positivo => vamos por detrás
+        if (Math.abs(ageMs) > 25) {
+          if (ageMs > 25) {
+            // Vamos detrás -> aumentar factor suavemente
+            this.predictionLeadFactor = Math.min(this.predictionLeadFactor * 1.05, 2.0);
+          } else if (ageMs < -25) {
+            // Vamos demasiado adelantados -> reducir
+            this.predictionLeadFactor = Math.max(this.predictionLeadFactor * 0.94, 0.5);
+          }
+        }
+        if (this.frameId % 600 === 0) {
+          console.log(`[PERF] lat=${this.lastLatencyMs.toFixed(1)}ms ema=${this.latencyEmaMs.toFixed(1)}ms age=${ageMs.toFixed(1)}ms leadFactor=${this.predictionLeadFactor.toFixed(2)}`);
+        }
         if (this.loadingFirstFrame) {
           this.loadingFirstFrame = false;
           this.loadingProgress = 100;
@@ -1552,13 +1969,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
           this.loadingElapsedMs = this.loadingEndTime - this.loadingStartTime;
           console.log(`[LOAD] Primer frame completo en ${this.loadingElapsedMs.toFixed(0)} ms.`);
         }
-        if (this.useRealTime) {
-          this.simulatedDate = new Date();
-        } else {
-          const timeIncrement = 16.67 * this.timeMultiplier;
-          this.simulatedDate = new Date(this.simulatedDate.getTime() + timeIncrement);
-          console.log(`[TIME-SIM] Tiempo simulado (x${this.timeMultiplier}): ${this.simulatedDate.toISOString()}`);
-        }
+  // Siempre tiempo real
+  this.simulatedDate = new Date();
         this.lastWorkerFrameDate = new Date(this.simulatedDate);
         this.workerBusy = false;
       }
@@ -1566,6 +1978,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
     // Enviar los TLEs al worker
     console.log('[WORKER] Enviando TLEs iniciales');
+	// Enviar TLEs iniciales pidiendo ya una propagación ligeramente adelantada
+    this.lastPropagateSend = performance.now();
+    const initLeadMs = Math.min(this.latencyEmaMs * this.predictionLeadFactor, this.MAX_LEAD_MS);
+    this.lastPropTargetTimeMs = Date.now() + initLeadMs;
     this.worker.postMessage({
       type: 'init_tles',
       payload: {
@@ -1620,10 +2036,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // Enviar al worker las nuevas posiciones a calcular
     const frustumPlanes = this.updateFrustum();
     this.workerBusy = true; // Bloquear hasta la siguiente respuesta
+    this.lastPropagateSend = performance.now();
+    const leadMs = Math.min(this.latencyEmaMs * this.predictionLeadFactor, this.MAX_LEAD_MS);
+    const targetTimeMs = Date.now() + leadMs;
+    this.lastPropTargetTimeMs = targetTimeMs;
     this.worker.postMessage({
       type: 'propagate',
       payload: {
-        date: this.simulatedDate.toISOString(),
+        date: new Date(targetTimeMs).toISOString(),
         frustumPlanes,
         uePosition: {
           x: this.ueMesh.position.x,
@@ -1652,6 +2072,15 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // 🔄 Regeneración dinámica de groundtrack (cada ~2s) si procede
     if (this.activeOrbitMode === OrbitMode.GroundTrack && this.selectedSatelliteIndex != null) {
       this.generateDynamicOrbit(this.selectedSatelliteIndex);
+    }
+
+    // Rotación de la Tierra en modo INERTIAL para visual real; en modo EarthFixed no rotamos (ECEF ya aplicado).
+    if (this.viewFrame === ViewFrame.Inertial && this.earthRoot) {
+      const now = performance.now();
+      if (this.lastFrameTime == null) this.lastFrameTime = now;
+      const dtSec = (now - this.lastFrameTime) / 1000;
+      this.lastFrameTime = now;
+      this.earthRoot.rotation.y += this.EARTH_ROT_RATE * dtSec; // Y rota este globo
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -1823,9 +2252,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       });
     }
     // Línea satélite->Tierra
-    if (this.selectedSatelliteLine && (this.selectedSatelliteLine.material as any)?.color) {
-      (this.selectedSatelliteLine.material as any).color.set(this.cfg.orbitColor);
-      (this.selectedSatelliteLine.material as any).needsUpdate = true;
+    if (this.selectedSatelliteLine) {
+      this.selectedSatelliteLine.traverse(obj => {
+        const mesh:any = obj;
+        if (mesh.isMesh && mesh.material && mesh.material.color) {
+          mesh.material.color.set(this.cfg.orbitColor);
+          mesh.material.needsUpdate = true;
+        }
+      });
     }
   }
 

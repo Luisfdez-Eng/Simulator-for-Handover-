@@ -78,3 +78,157 @@ h2 {
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
   padding-bottom: 5px;
 }
+
+/* Buscador y selector de constelaciones */
+.constellation-select, .sat-search { margin-top: 8px; }
+.constellation-select label { display:block; font-size:0.75rem; opacity:0.8; margin-bottom:2px; }
+.constellation-select select, .sat-search input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  border-radius: 4px;
+  outline: none;
+  font-size: 0.85rem;
+}
+.constellation-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: rgba(117, 117, 117, 0.679);
+  backdrop-filter: blur(16px);
+}
+/* Para algunos navegadores (no todos) forzamos color del popup */
+select option { background: #111; color:#fff; }
+.sat-search { position: relative; }
+.search-dropdown {
+  position: absolute;
+  left: 0; right: 0;
+  top: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: rgba(0,0,0,0.9);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 4px;
+  z-index: 10;
+  margin-top: 2px;
+}
+.search-item { padding: 4px 8px; cursor: pointer; font-size: 0.75rem; background: rgba(0,0,0,0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-item:hover { background: rgba(255,255,255,0.15); }
+.no-results { padding:6px 8px; font-size:0.7rem; opacity:0.7; }
+
+/* Panel flotante de búsqueda */
+/* === Nuevo panel búsqueda moderno === */
+.search-panel {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 18px 20px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(18,22,30,0.78), rgba(14,17,24,0.78));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 10px 32px -6px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.03);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  font-size: 0.8rem;
+  z-index: 50;
+  animation: panelEnter .4s ease;
+}
+@keyframes panelEnter { from { opacity:0; transform: translateY(-4px) scale(.96);} to { opacity:1; transform: translateY(0) scale(1);} }
+.finder-header { display:flex; flex-direction:column; gap:2px; }
+.finder-title { font-size:0.95rem; font-weight:600; letter-spacing:.5px; }
+.finder-subtitle { font-size:0.6rem; opacity:.55; text-transform:uppercase; letter-spacing:1px; }
+.finder-field { display:flex; flex-direction:column; gap:4px; }
+.finder-field label { font-size:0.6rem; font-weight:600; letter-spacing:.75px; text-transform:uppercase; opacity:.7; padding-left:2px; }
+.select-wrapper { position:relative; }
+.select-wrapper select { width:100%; appearance:none; -webkit-appearance:none; -moz-appearance:none; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#fff; padding:8px 30px 8px 10px; font-size:0.75rem; line-height:1; border-radius:10px; outline:none; transition:border .25s, background .25s; }
+.select-wrapper select:focus { border-color:#4fa3ff; background:rgba(255,255,255,0.12); }
+.select-wrapper .chevron { position:absolute; top:0; right:0; height:100%; width:26px; display:flex; align-items:center; justify-content:center; pointer-events:none; font-size:0.65rem; opacity:.65; }
+.input-wrapper { position:relative; display:flex; align-items:center; }
+/* Garantizar stacking context adecuado para dropdown */
+.finder-field { position:relative; }
+.input-wrapper input { width:100%; padding:8px 32px 8px 30px; font-size:0.75rem; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:10px; outline:none; transition:border .25s, background .25s; }
+.input-wrapper input:focus { border-color:#4fa3ff; background:rgba(255,255,255,0.12); }
+.input-wrapper .icon-search { position:absolute; left:8px; font-size:0.7rem; opacity:.7; }
+.input-wrapper .clear-btn { position:absolute; right:6px; background:rgba(255,255,255,0.15); border:none; color:#fff; width:20px; height:20px; font-size:0.6rem; border-radius:6px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; backdrop-filter: blur(2px); transition: background .2s, transform .2s; }
+.input-wrapper .clear-btn:hover { background:rgba(255,255,255,0.3); }
+.input-wrapper .clear-btn:active { transform:scale(.88); }
+.finder-stats { display:flex; gap:6px; align-items:center; font-size:0.55rem; text-transform:uppercase; letter-spacing:1px; opacity:.55; padding-left:2px; }
+.finder-stats .divider { opacity:.35; }
+.search-dropdown {
+  position:absolute;
+  left:0; right:0;
+  top:100%;
+  margin-top:4px;
+  max-height: clamp(180px, 40vh, 360px);
+  overflow-y:auto;
+  overflow-x:hidden;
+  border-radius:12px;
+  border:1px solid rgba(255,255,255,0.15);
+  background:linear-gradient(145deg, rgba(14,17,24,0.96), rgba(10,13,18,0.94));
+  box-shadow:0 14px 44px -12px rgba(0,0,0,0.65), 0 2px 4px -1px rgba(0,0,0,0.4);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  z-index:120;
+}
+.search-item { font-size:0.7rem; padding:6px 10px; background:transparent; transition: background .18s, color .18s; }
+.search-item:hover { background:rgba(255,255,255,0.1); }
+.no-results { font-size:0.65rem; padding:8px 10px; }
+
+/* Scroll estilizado en dropdown */
+.search-dropdown::-webkit-scrollbar { width:8px; }
+.search-dropdown::-webkit-scrollbar-track { background:transparent; }
+.search-dropdown::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.15); border-radius:4px; }
+.search-dropdown::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.28); }
+
+/* Botón flotante configuración */
+.config-toggle {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #3f3f3f, #1b1b1b);
+  border: 1px solid rgba(255,255,255,0.25);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.25rem;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+  z-index: 60;
+  transition: background 0.25s, transform 0.2s;
+}
+.config-toggle:hover { background: radial-gradient(circle at 30% 30%, #555, #222); transform: translateY(-2px); }
+.config-toggle:active { transform: scale(0.92); }
+
+/* Panel configuración emergente */
+.config-panel {
+  position: absolute;
+  bottom: 80px;
+  right: 20px;
+  width: 260px;
+  background: rgba(0,0,0,0.85);
+  padding: 14px 16px 18px;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 24px -4px rgba(0,0,0,0.6);
+  z-index: 59;
+  animation: cfgFadeIn .25s ease;
+}
+.config-panel h3 { margin:0 0 10px; font-size: 0.95rem; font-weight:600; letter-spacing: .5px; }
+.config-options { display: flex; flex-direction: column; gap: 8px; font-size: 0.78rem; }
+.config-option { display: flex; align-items: center; gap: 8px; }
+.config-option label { cursor: pointer; user-select: none; line-height: 1.2; }
+.color-row { display:flex; gap:6px; flex-wrap: wrap; margin-top:4px; }
+.color-swatch { width:22px; height:22px; border-radius:6px; border:1px solid rgba(255,255,255,0.35); cursor:pointer; position:relative; box-shadow:0 0 0 1px rgba(0,0,0,0.4) inset; }
+.color-swatch.selected { outline:2px solid #fff; }
+@keyframes cfgFadeIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform: translateY(0);} }

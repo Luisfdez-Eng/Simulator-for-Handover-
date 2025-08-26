@@ -1502,14 +1502,25 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     );
   }
   private geoECEF_Yup(latDeg: number, lonDeg: number, altitudeKm = 0): { x: number; y: number; z: number } {
-    const R = 6371; // km
-    const lat = THREE.MathUtils.degToRad(latDeg);
-    const lon = THREE.MathUtils.degToRad(lonDeg);
-    const r = R + altitudeKm;
-    const x = r * Math.cos(lat) * Math.cos(lon);
-    const y = r * Math.sin(lat);       // eje polar
-    const z = r * Math.cos(lat) * Math.sin(lon); // 90E -> +Z antes de LONGITUDE_SIGN (que se aplica solo en ecfToScene)
-    return { x, y, z };
+  // CORRECCIÓN: Esta función generaba un sistema inconsistente (usaba Y como eje polar y Z como Este-Oeste)
+  // mientras que todo el pipeline (ECI->ECF, logSelectedSatelliteGeodetic) asume ECF estándar:
+  //   x: lat=0, lon=0 (ecuador / Greenwich)
+  //   y: lat=0, lon=+90°E
+  //   z: eje polar (Norte)
+  // Esto provocaba que al introducir (lat, lon) el UE apareciera desplazado (ej: Madrid terminaba en África oriental).
+  // Implementamos ahora la fórmula ECEF estándar (esfera) coherente con el resto.
+  const R = 6371; // km (modelo esférico suficiente aquí)
+  const lat = THREE.MathUtils.degToRad(latDeg);
+  const lon = THREE.MathUtils.degToRad(lonDeg);
+  const r = R + altitudeKm;
+  const cosLat = Math.cos(lat);
+  const sinLat = Math.sin(lat);
+  const cosLon = Math.cos(lon);
+  const sinLon = Math.sin(lon);
+  const x = r * cosLat * cosLon;
+  const y = r * cosLat * sinLon;  // Este positivo
+  const z = r * sinLat;           // Norte positivo
+  return { x, y, z };
   }
   private geographicToCartesian(latDeg: number, lonDeg: number, altKm: number = 0): THREE.Vector3 {
     const ecf = this.geoECEF_Yup(latDeg, lonDeg, altKm);
@@ -1524,6 +1535,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (this.selectedSatelliteIndex != null && this.activeOrbitMode) {
       this.generateInstantOrbit(this.selectedSatelliteIndex, this.activeOrbitMode);
     }
+  // Reatachar UE
+  this.updateUserPosition();
   }
   public setDebugLogs(enabled: boolean) {
     this.debugLogs = enabled;
@@ -1994,8 +2007,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       new THREE.SphereGeometry(0.0004),
       new THREE.MeshBasicMaterial({ color: 0xFFA500 })
     );
-    this.ueMesh.position.set(0.1, 0, 0);
-    this.scene.add(this.ueMesh);
+    // Se posiciona correctamente vía updateUserPosition según frame
+    if (this.viewFrame === ViewFrame.Inertial && this.earthRoot) {
+      this.earthRoot.add(this.ueMesh);
+    } else {
+      this.scene.add(this.ueMesh);
+    }
+    this.updateUserPosition();
   }
   private animate = () => {
     this.frameId = requestAnimationFrame(this.animate);
@@ -2140,9 +2158,23 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // 🎯 MEJORADO: Usar conversión geográfica precisa
     const position = this.geographicToCartesian(this.userLat, this.userLon, 0);
 
-    if (this.ueMesh) {
+    if (!this.ueMesh) return;
+    if (this.viewFrame === ViewFrame.Inertial && this.earthRoot) {
+      if (this.ueMesh.parent !== this.earthRoot) {
+        this.ueMesh.parent?.remove(this.ueMesh);
+        this.earthRoot.add(this.ueMesh);
+      }
+      // En modo inercial la Tierra rota, así que anclamos UE a la Tierra para que rote con ella.
       this.ueMesh.position.copy(position);
-      console.log(`[UE-POS] Usuario ubicado en: lat=${this.userLat}°, lon=${this.userLon}° -> (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
+    } else {
+      if (this.ueMesh.parent !== this.scene) {
+        this.ueMesh.parent?.remove(this.ueMesh);
+        this.scene.add(this.ueMesh);
+      }
+      this.ueMesh.position.copy(position);
+    }
+    if (this.debugLogs && this.frameId % 120 === 0) {
+      console.log(`[UE-POS] lat=${this.userLat} lon=${this.userLon} frame=${this.viewFrame} -> (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
     }
   }
   private updateSatellitePositionsChunk(chunk: { index: number; eci_km: { x: number; y: number; z: number }; gmst: number; visible: boolean; lon?: number; lat?: number; height?: number }[], offset: number) {

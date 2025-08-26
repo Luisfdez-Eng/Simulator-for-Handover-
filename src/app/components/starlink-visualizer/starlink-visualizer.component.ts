@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader';
 import { TleLoaderService, SatData } from '../../services/tle-loader.service';
 import { MLHandoverService, SatelliteMetrics } from '../../services/ml-handover.service';
+import { CityLoaderService, CityEntry } from '../../services/city-loader.service';
 import * as satellite from 'satellite.js';
 
 enum ViewFrame { EarthFixed = 'earthfixed', Inertial = 'inertial' }
@@ -131,7 +132,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   //region Contructor [rgba(255, 0, 0, 0.1)]
   constructor(
     public tle: TleLoaderService,
-    private ml: MLHandoverService
+    private ml: MLHandoverService,
+    private cityLoader: CityLoaderService
   ) { }
   async ngOnInit() {
     this.selectedConstellation = 'starlink';
@@ -173,6 +175,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       console.log('[DEBUG] THREE expuesto como window.THREE');
       console.log('[DEBUG] Orbit helpers: genOrbit(i,mode), clearOrbit(), setOrbitMode(mode), orbitInfo()');
     }
+  // Listeners globales para cerrar dropdowns y reposicionar
+  window.addEventListener('click', this.onGlobalClick, true);
+  window.addEventListener('keydown', this.onGlobalKey, true);
+  window.addEventListener('resize', () => { if (this.showCityDropdown) this.updateCityDropdownPosition(); });
   }
   ngOnDestroy() {
     cancelAnimationFrame(this.frameId);
@@ -183,6 +189,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       delete (window as any).ngRef;
       console.log('[DEBUG] window.ngRef limpiado');
     }
+  window.removeEventListener('click', this.onGlobalClick, true);
+  window.removeEventListener('keydown', this.onGlobalKey, true);
   }
   private controls!: OrbitControls;
 
@@ -507,6 +515,75 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private allSuggestionResults: { index: number; label: string }[] = [];
   private suggestionBatchSize = 80;
   private suggestionVisibleCount = 0;
+  // Estado UI dock / flyouts
+  public openModule: string | null = null;
+  public toggleModule(id: string) {
+    this.openModule = (this.openModule === id) ? null : id;
+  }
+  // Posicionamiento dropdown ciudades flotante
+  public cityDropdownX = 0; public cityDropdownY = 0; public cityDropdownWidth = 0;
+  private updateCityDropdownPosition() {
+    try {
+      const input = document.querySelector('.module-flyout .city-search-wrapper input');
+      if (!input) return;
+      const r = (input as HTMLElement).getBoundingClientRect();
+      const margin = 4;
+      let top = r.bottom + window.scrollY + margin;
+      const maxBottom = window.scrollY + window.innerHeight - 240; // 240px dropdown approx
+      if (top > maxBottom) top = r.top + window.scrollY - margin - 240; // abrir hacia arriba si no cabe
+      this.cityDropdownX = r.left + window.scrollX;
+      this.cityDropdownY = top;
+      this.cityDropdownWidth = r.width;
+    } catch { /* noop */ }
+  }
+
+  // ====== Módulo Geo Locator (ciudades) ======
+  public cityQuery: string = '';
+  public showCityDropdown = false;
+  private citySuggestionMode = false;
+  private allCities: CityEntry[] = [];
+  private cityBatchSize = 100;
+  private cityVisibleCount = 0;
+  public filteredCities: CityEntry[] = [];
+  public onCitySearchFocus() { if (this.cityQuery.trim() !== '') return; this.citySuggestionMode = true; this.loadCitiesAndPrepare(); }
+  public onCitySearchChange() {
+    const q = this.cityQuery.trim().toLowerCase();
+    if (!q) { if (this.citySuggestionMode) { this.loadCitiesAndPrepare(); } else { this.showCityDropdown = false; } return; }
+    this.citySuggestionMode = false;
+    const res = this.allCities.filter(c => c.name.toLowerCase().includes(q) || (c.country && c.country.toLowerCase().includes(q)));
+    this.filteredCities = res.slice(0, 400);
+    this.showCityDropdown = this.filteredCities.length > 0;
+    if (this.showCityDropdown) this.updateCityDropdownPosition();
+  }
+  private async loadCitiesAndPrepare() {
+    if (this.allCities.length === 0) this.allCities = await this.cityLoader.getCities();
+    this.cityVisibleCount = Math.min(this.cityBatchSize, this.allCities.length);
+    this.filteredCities = this.allCities.slice(0, this.cityVisibleCount);
+    this.showCityDropdown = true;
+    if (this.showCityDropdown) this.updateCityDropdownPosition();
+  }
+  public onCityScroll(ev: any) {
+    if (!this.citySuggestionMode) return; const el = ev.target as HTMLElement;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 20) {
+      if (this.cityVisibleCount < this.allCities.length) {
+        this.cityVisibleCount = Math.min(this.cityVisibleCount + this.cityBatchSize, this.allCities.length);
+        this.filteredCities = this.allCities.slice(0, this.cityVisibleCount);
+      }
+    }
+  }
+  public pickCity(c: CityEntry) { this.userLat = c.lat; this.userLon = c.lon; this.updateUserPosition(); this.cityQuery = c.name; this.showCityDropdown = false; }
+
+  // ===== Global listeners para cerrar dropdowns =====
+  private onGlobalClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const insideSat = !!target.closest('.search-panel');
+    const insideCity = !!target.closest('.city-search-wrapper') || !!target.closest('.city-dropdown');
+    if (!insideSat) { this.showSearchDropdown = false; }
+    if (!insideCity) { this.showCityDropdown = false; }
+  };
+  private onGlobalKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') { this.showSearchDropdown = false; this.showCityDropdown = false; }
+  };
 
   public onSearchChange() {
     const q = this.searchQuery.trim().toLowerCase();
@@ -530,8 +607,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.showSearchDropdown = results.length > 0;
   }
   public pickSearchResult(idx: number) {
-    this.selectSatellite(idx);
-    this.showSearchDropdown = false;
+  this.selectSatellite(idx);
+  // Colocar el nombre seleccionado en el input de búsqueda
+  const label = this.tle.getDisplayName(idx);
+  this.searchQuery = label;
+  this.filteredResults = [];
+  this.showSearchDropdown = false;
   }
   // Mostrar primeras 10 sugerencias al enfocar si no hay búsqueda
   public onSearchFocus() {
@@ -1502,14 +1583,25 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     );
   }
   private geoECEF_Yup(latDeg: number, lonDeg: number, altitudeKm = 0): { x: number; y: number; z: number } {
-    const R = 6371; // km
-    const lat = THREE.MathUtils.degToRad(latDeg);
-    const lon = THREE.MathUtils.degToRad(lonDeg);
-    const r = R + altitudeKm;
-    const x = r * Math.cos(lat) * Math.cos(lon);
-    const y = r * Math.sin(lat);       // eje polar
-    const z = r * Math.cos(lat) * Math.sin(lon); // 90E -> +Z antes de LONGITUDE_SIGN (que se aplica solo en ecfToScene)
-    return { x, y, z };
+  // CORRECCIÓN: Esta función generaba un sistema inconsistente (usaba Y como eje polar y Z como Este-Oeste)
+  // mientras que todo el pipeline (ECI->ECF, logSelectedSatelliteGeodetic) asume ECF estándar:
+  //   x: lat=0, lon=0 (ecuador / Greenwich)
+  //   y: lat=0, lon=+90°E
+  //   z: eje polar (Norte)
+  // Esto provocaba que al introducir (lat, lon) el UE apareciera desplazado (ej: Madrid terminaba en África oriental).
+  // Implementamos ahora la fórmula ECEF estándar (esfera) coherente con el resto.
+  const R = 6371; // km (modelo esférico suficiente aquí)
+  const lat = THREE.MathUtils.degToRad(latDeg);
+  const lon = THREE.MathUtils.degToRad(lonDeg);
+  const r = R + altitudeKm;
+  const cosLat = Math.cos(lat);
+  const sinLat = Math.sin(lat);
+  const cosLon = Math.cos(lon);
+  const sinLon = Math.sin(lon);
+  const x = r * cosLat * cosLon;
+  const y = r * cosLat * sinLon;  // Este positivo
+  const z = r * sinLat;           // Norte positivo
+  return { x, y, z };
   }
   private geographicToCartesian(latDeg: number, lonDeg: number, altKm: number = 0): THREE.Vector3 {
     const ecf = this.geoECEF_Yup(latDeg, lonDeg, altKm);
@@ -1524,6 +1616,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (this.selectedSatelliteIndex != null && this.activeOrbitMode) {
       this.generateInstantOrbit(this.selectedSatelliteIndex, this.activeOrbitMode);
     }
+  // Reatachar UE
+  this.updateUserPosition();
   }
   public setDebugLogs(enabled: boolean) {
     this.debugLogs = enabled;
@@ -1994,8 +2088,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       new THREE.SphereGeometry(0.0004),
       new THREE.MeshBasicMaterial({ color: 0xFFA500 })
     );
-    this.ueMesh.position.set(0.1, 0, 0);
-    this.scene.add(this.ueMesh);
+    // Se posiciona correctamente vía updateUserPosition según frame
+    if (this.viewFrame === ViewFrame.Inertial && this.earthRoot) {
+      this.earthRoot.add(this.ueMesh);
+    } else {
+      this.scene.add(this.ueMesh);
+    }
+    this.updateUserPosition();
   }
   private animate = () => {
     this.frameId = requestAnimationFrame(this.animate);
@@ -2140,9 +2239,23 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // 🎯 MEJORADO: Usar conversión geográfica precisa
     const position = this.geographicToCartesian(this.userLat, this.userLon, 0);
 
-    if (this.ueMesh) {
+    if (!this.ueMesh) return;
+    if (this.viewFrame === ViewFrame.Inertial && this.earthRoot) {
+      if (this.ueMesh.parent !== this.earthRoot) {
+        this.ueMesh.parent?.remove(this.ueMesh);
+        this.earthRoot.add(this.ueMesh);
+      }
+      // En modo inercial la Tierra rota, así que anclamos UE a la Tierra para que rote con ella.
       this.ueMesh.position.copy(position);
-      console.log(`[UE-POS] Usuario ubicado en: lat=${this.userLat}°, lon=${this.userLon}° -> (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
+    } else {
+      if (this.ueMesh.parent !== this.scene) {
+        this.ueMesh.parent?.remove(this.ueMesh);
+        this.scene.add(this.ueMesh);
+      }
+      this.ueMesh.position.copy(position);
+    }
+    if (this.debugLogs && this.frameId % 120 === 0) {
+      console.log(`[UE-POS] lat=${this.userLat} lon=${this.userLon} frame=${this.viewFrame} -> (${position.x.toFixed(4)}, ${position.y.toFixed(4)}, ${position.z.toFixed(4)})`);
     }
   }
   private updateSatellitePositionsChunk(chunk: { index: number; eci_km: { x: number; y: number; z: number }; gmst: number; visible: boolean; lon?: number; lat?: number; height?: number }[], offset: number) {

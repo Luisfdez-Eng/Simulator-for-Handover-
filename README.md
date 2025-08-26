@@ -1,298 +1,286 @@
-# 🛰️ Simulador Avanzado de Handover de Starlink
+git clone https://github.com/tu-usuario/handover-simulator-3.git
+# 🛰️ Advanced Starlink Handover Simulator
 
-Un simulador 3D en tiempo real de handovers de satélites Starlink desarrollado con Angular, Three.js y algoritmos de machine learning.
+Real‑time 3D simulator of Starlink constellation handovers built with Angular, Three.js and ML‑assisted selection logic.
 
 ![Starlink Simulator](https://img.shields.io/badge/Starlink-Simulator-blue?style=for-the-badge&logo=satellite)
 ![Angular](https://img.shields.io/badge/Angular-16+-red?style=for-the-badge&logo=angular)
 ![Three.js](https://img.shields.io/badge/Three.js-3D-green?style=for-the-badge&logo=three.js)
 
-## ✨ Características Principales
+## ✨ Key Features
 
-### 🌍 **Visualización 3D Realista**
-- Modelo terrestre con texturas de alta resolución (64x64 segmentos)
-- Sistema de coordenadas astronómicas preciso con conversión geográfica
-- Rotación en tiempo real basada en GMST (Greenwich Mean Sidereal Time)
-- Wireframe y grid de latitud/longitud para referencia
+### 🌍 Realistic 3D Earth
+- High‑res textured sphere (64×64 segments)
+- Accurate astronomical / geographic transform chain
+- Real‑time rotation driven by GMST (sidereal time)
+- Latitude/longitude reference grid & wireframe overlay
 
-### 🛰️ **Simulación de Satélites**
-- Renderizado optimizado de ~6000 satélites Starlink simultáneamente
-- Datos orbitales TLE (Two-Line Elements) reales de CelesTrak
-- Propagación orbital SGP4 usando satellite.js en Web Workers
-- Escalado dinámico según distancia de cámara (0.1x a 3x)
+### 🛰️ Massive Satellite Simulation
+- Efficient rendering of ~6,000 Starlink satellites
+- Live TLE (Two‑Line Element) orbital data (CelesTrak)
+- SGP4 propagation offloaded to Web Workers
+- Distance‑aware dynamic scaling (0.1×–3×)
 
-### 🏷️ **Sistema de Etiquetas Inteligente**
-- Algoritmo anti-solapamiento con posicionamiento smart offset
-- Etiquetas limitadas por zoom: 50/75/100/150 según nivel de detalle
-- Posicionamiento 70% hacia exterior terrestre + 30% hacia cámara
-- Identificación visual clara sin saturación de interfaz
+### 🏷️ Smart Label System
+- Overlap‑avoidance with adaptive offset placement
+- Progressive cap by zoom level (50/75/100/150 labels)
+- Hybrid placement: 70% radial + 30% camera bias for readability
+- Clear visual identification without UI clutter
 
-### 📡 **Sistema de Handover ML**
-- Algoritmos de machine learning para decisiones automáticas
-- Métricas de calidad: RSSI, elevación, distancia, disponibilidad
-- Histéresis y cooldown configurables para evitar handovers frecuentes
-- Visualización en tiempo real del satélite objetivo seleccionado
+### 📡 ML‑Assisted Handover Engine
+- Multi‑factor scoring: RSSI proxy, elevation, range, availability
+- Configurable hysteresis & cooldown to reduce churn
+- Real‑time highlight of current serving satellite
 
-### 🎮 **Controles Avanzados**
-- Cámara orbital sin inercia para control preciso
-- Sensibilidad adaptativa según nivel de zoom
-- Vista detallada automática con etiquetas de satélites
-- Navegación 3D intuitiva con mouse y scroll
+### 🎮 Advanced Controls
+- Zero‑inertia orbital camera for precision
+- Zoom‑adaptive sensitivity
+- Automatic detailed view threshold
+- Intuitive mouse navigation & scroll zoom
 
-### ⏰ **Sincronización Temporal Dual**
-- **Modo Tiempo Real**: Sincronizado con fecha/hora actual astronómica
-- **Modo Simulación**: Tiempo acelerado para pruebas y análisis
-- Cálculos astronómicos precisos para rotación terrestre
-- Switching dinámico entre modos durante ejecución
+### ⏰ Dual Time Modes
+- Real Time: synchronized with current epoch
+- Simulation: accelerated timeline for analysis
+- Seamless live switching between modes
+- Astronomically correct Earth rotation
 
-### ⚡ **Optimización de Performance**
-- Web Workers para cálculos orbitales sin bloquear UI
-- InstancedMesh para renderizado masivo eficiente de satélites
-- Frustum culling para optimización de visibilidad
-- Procesamiento por chunks para evitar lag
+### 🗺️ Global Geolocation Module (New)
+- Expanded world city dataset (hundreds of major cities)
+- Fast client‑side fuzzy search with incremental filtering
+- Floating dropdown overlay (no layout shift) with auto up/down placement
+- Outside click + ESC dismissal for city & satellite lists
+- Accurate UE coordinate placement after geodetic basis fix
 
-## 🚀 Tecnologías Utilizadas
+### 🧠 Adaptive Propagation Lead (New)
+- Worker tracks round‑trip latency & applies predictive time lead
+- Smooths jitter using EMA -> improved visual temporal coherence
 
-- **Frontend**: Angular 16+ con TypeScript (modo strict)
-- **3D Engine**: Three.js con WebGL y InstancedMesh
-- **Cálculos Orbitales**: satellite.js (implementación SGP4)
-- **Performance**: Web Workers, chunk processing
-- **Tipografía**: Google Fonts (Orbitron, Exo 2, Rajdhani)
-- **Build System**: Angular CLI con optimizaciones
-- **Control de Versiones**: Git + SourceTree
+### 🧩 Modular UI Architecture (New)
+- Top banner + right vertical dock + independent flyout panels
+- Detachable logic for Geo, Link, Metrics, Config (extensible stubs)
+- Overlay dropdowns rendered at document root to avoid nested scrollbars
 
-## 📦 Instalación y Configuración
+### ⚡ Performance Optimisation
+- Web Workers for heavy orbital math
+- InstancedMesh for batched GPU draws
+- Frustum culling & chunked updates
+- Dynamic label & mesh scaling
 
-### Prerrequisitos
+## 🚀 Tech Stack
+- Frontend: Angular 16+ (strict TypeScript)
+- 3D Engine: Three.js (WebGL, InstancedMesh)
+- Orbit Propagation: satellite.js (SGP4)
+- Concurrency: Web Workers
+- Fonts: Orbitron, Exo 2, Rajdhani
+- Tooling: Angular CLI
+- Version Control: Git / SourceTree
+
+## 📦 Installation
+
+### Prerequisites
 - Node.js 16+
 - Angular CLI 16+
 - Git
 
-### Pasos de Instalación
-
+### Steps
 ```bash
-# Clonar el repositorio
-git clone https://github.com/tu-usuario/handover-simulator-3.git
+git clone https://github.com/your-user/handover-simulator-3.git
 cd handover-simulator-3
-
-# Instalar dependencias
 npm install
-
-# Iniciar servidor de desarrollo
 ng serve
-
-# Abrir en navegador
-# http://localhost:4200
+# Open http://localhost:4200
 ```
 
-### Build de Producción
-
+### Production Build
 ```bash
-# Build optimizado
 ng build --configuration production
-
-# Los archivos estarán en /dist/
+# Output in /dist/
 ```
 
-## 🎛️ Controles de Usuario
+## 🎛️ User Controls
+### 3D Navigation
+- Mouse drag: orbit camera
+- Scroll: zoom (auto enters detailed mode)
+- Detailed mode triggers enhanced labeling
 
-### Navegación 3D
-- **Mouse**: Rotar cámara alrededor de la Tierra
-- **Scroll**: Zoom in/out (activación automática de vista detallada)
-- **Vista Detallada**: Se activa automáticamente al hacer zoom cercano
+### Time Modes
+- Real Time: live ephemeris alignment
+- Simulation: accelerated for experiments
 
-### Modos de Tiempo
-- **Tiempo Real**: Satélites sincronizados con posiciones astronómicas reales
-- **Simulación**: Tiempo acelerado para pruebas y análisis
+### Geo / Handover Config
+- Latitude / Longitude (user equipment position)
+- ML parameters: hysteresis & cooldown
+- Label & rendering toggles
 
-### Configuración de Usuario
-- **Latitud/Longitud**: Posición del equipo usuario (UE)
-- **Parámetros ML**: Histéresis y cooldown para handovers
-- **Visualización**: Toggle de etiquetas y modos de renderizado
-
-## 🔧 Arquitectura del Proyecto
-
+## 🔧 Project Architecture
 ```
 src/
 ├── app/
 │   ├── components/
-│   │   └── starlink-visualizer/     # Componente principal 3D
-│   │       ├── starlink-visualizer.component.ts    # Lógica principal
-│   │       ├── starlink-visualizer.component.html  # Template
-│   │       ├── starlink-visualizer.component.css   # Estilos
-│   │       └── orbit-controls.ts                   # Controles cámara
+│   │   └── starlink-visualizer/
+│   │       ├── starlink-visualizer.component.ts      # Core logic & UI state
+│   │       ├── starlink-visualizer.component.html    # Template (modular dock + flyouts)
+│   │       ├── starlink-visualizer.component.css     # Styles (glass, overlays)
+│   │       └── orbit-controls.ts                     # Camera controls
 │   ├── services/
-│   │   ├── tle-loader.service.ts    # Carga de datos TLE
-│   │   └── ml-handover.service.ts   # Algoritmos ML
+│   │   ├── tle-loader.service.ts                     # TLE loading & caching
+│   │   ├── ml-handover.service.ts                    # ML handover scoring
+│   │   └── city-loader.service.ts (future)           # Large city dataset loader
 │   └── workers/
-│       └── orbital.worker.ts        # Cálculos orbitales
+│       └── orbital.worker.ts                         # SGP4 propagation + latency lead
 ├── assets/
-│   ├── earth_continents_bw.png     # Textura terrestre alta resolución
-│   ├── gp.txt                      # Datos TLE de Starlink
-│   └── orbital.worker.js           # Worker compilado
-└── styles.css                      # Estilos globales futuristas
+│   ├── earth_continents_bw.png                       # Earth texture
+│   ├── gp.txt                                        # Starlink TLE source
+│   ├── cities.json                                   # Expanded city list
+│   └── orbital.worker.js                             # Built worker bundle
+└── styles.css                                        # Global futuristic styling
 ```
 
-## 🛰️ Datos de Satélites
+## 🛰️ Satellite Data
+- Source: CelesTrak / Space-Track.org
+- Format: Standard TLE
+- Volume: ~6k active Starlink spacecraft
+- Accuracy: SGP4 physical propagation
 
-El simulador utiliza datos TLE (Two-Line Elements) reales de la constelación Starlink:
-- **Fuente**: CelesTrak / Space-Track.org
-- **Formato**: TLE estándar NOAA
-- **Actualización**: Datos recientes de órbitas
-- **Cantidad**: ~6000 satélites activos
-- **Precisión**: Propagación SGP4 astronómicamente precisa
-
-## 🤖 Algoritmos ML
-
-### Sistema de Handover Inteligente
-```typescript
-// Factores considerados:
-- Distancia al satélite (km)
-- Ángulo de elevación (grados)
-- SNR simulado (dB)
-- Historial de handovers previos
-- Tiempo desde último handover (cooldown)
-- Métricas de calidad de enlace
+## 🤖 ML / Decision Logic
+### Handover Factors
+```text
+Distance (km)
+Elevation angle (°)
+Simulated SNR (dB)
+Handover history & cooldown window
+Link quality composite score
+Predicted visibility duration
 ```
-
-### Métricas de Calidad
-- **RSSI**: Indicador de intensidad de señal (-120 a -60 dBm)
-- **Elevación**: Ángulo sobre el horizonte (0-90°)
-- **Distancia**: Proximidad al usuario (400-2000 km)
-- **Disponibilidad**: Tiempo de visibilidad estimado
+### Quality Metrics
+- RSSI proxy: -120 to -60 dBm
+- Elevation: 0–90°
+- Distance: ~400–2000 km window
+- Availability: estimated line‑of‑sight time
 
 ## 📊 Performance
+### Implemented Optimisations
+- InstancedMesh batched rendering
+- Web Worker SGP4 computation
+- Frustum culling (view cone filtering)
+- Dynamic scaling by zoom level
+- Label cap & adaptive density
+- Chunked update scheduling
+### Indicative Benchmarks (modern hardware)
+- 60 FPS steady
+- ~150 MB memory footprint
+- <3 s cold start to first frame
 
-### Optimizaciones Implementadas
-- **InstancedMesh**: Renderizado de 6000+ satélites en una sola llamada de dibujo
-- **Web Workers**: Cálculos SGP4 sin bloquear thread principal
-- **Frustum Culling**: Solo procesar objetos visibles en pantalla
-- **Escalado Dinámico**: Ajuste automático de tamaño según zoom
-- **Etiquetas Limitadas**: Sistema inteligente de 50-150 etiquetas máximo
-- **Chunk Processing**: Actualizaciones por lotes para fluidez
+## 🔬 Astronomical Accuracy
+### Coordinate System
+- Reference: J2000 frame
+- Earth rotation: GMST derivation per frame
+- Geodetic (lat/lon) ↔ ECEF ↔ Scene mapping (corrected basis)
+- Polar handling & normalization
+### Validation Waypoints
+- Greenwich (0°, 51.48°)
+- Madrid (-3.70°, 40.42°)
+- Sydney (151.21°, -33.87°)
+- Poles ±90° latitude
+### Time Handling
+- Real time via system clock
+- Simulation via controlled increments
+- Millisecond precision for propagation
 
-### Benchmarks
-- **FPS**: 60 FPS estables en hardware moderno
-- **Memory**: ~150MB uso de memoria optimizado
-- **Load Time**: <3 segundos inicialización completa
-- **Satélites**: 6000+ renderizados simultáneamente
+## 🎨 User Interface
+### Futuristic Styling
+- Cyan / neon green palette (#00ffff / #00ff00 accents)
+- Sci‑fi typography set
+- Soft glass / translucency panels
+- Real‑time feedback indicators
+- Smooth transitions for state changes
+### Responsive
+- Scales to varied resolutions & 4K
+- Mobile / touch friendly interaction (in progress)
+- Layout decoupled via floating overlays
 
-## 🔬 Precisión Astronómica
+## 🧩 Modular Dock & Flyouts (Details)
+- Vertical dock buttons spawn independent flyout panels
+- Floating city & satellite dropdowns positioned at viewport level
+- Outside click + ESC uniformly closes open lists (accessibility)
+- Automatic reposition if near viewport edge (opens upward when needed)
 
-### Sistema de Coordenadas
-- **Referencia**: J2000.0 epoch astronómico
-- **Rotación Terrestre**: Cálculo GMST (Greenwich Mean Sidereal Time)
-- **Conversión**: Geográficas (lat/lon) → Cartesianas XYZ
-- **Proyección**: Equirectangular con corrección polar
-
-### Validación Geográfica
-Puntos de referencia incluidos para verificación:
-- **Greenwich** (0°, 51.48°) - Meridiano principal
-- **Madrid** (-3.70°, 40.42°) - Referencia europea
-- **Polos** Norte (90°) y Sur (-90°) - Extremos
-- **Sydney** (151.21°, -33.87°) - Hemisferio sur
-
-### Sincronización Temporal
-- **Tiempo Real**: `new Date()` para posiciones actuales
-- **Simulación**: Incremento controlado para análisis
-- **Precisión**: Milisegundos para cálculos orbitales
-
-## 🎨 Interfaz de Usuario
-
-### Estética Futurista
-- **Colores**: Paleta cyan/verde espacial (#00ffff, #00ff00)
-- **Tipografía**: Fuentes sci-fi (Orbitron, Electrolize, Rajdhani)
-- **Elementos**: Controles estilo consola espacial
-- **Feedback**: Indicadores en tiempo real
-- **Animaciones**: Transiciones suaves para UX
-
-### Responsive Design
-- Adaptable a diferentes resoluciones
-- Controles táctiles para dispositivos móviles
-- UI escalable según tamaño de pantalla
-- Optimizado para monitores 4K
-
-## 🛠️ Desarrollo
-
-### Scripts Disponibles
+## 🛠️ Development
+### NPM Scripts
 ```bash
-ng serve          # Servidor de desarrollo
-ng build          # Build de producción
-ng test           # Tests unitarios
-ng lint           # Linting y calidad de código
-ng e2e            # Tests end-to-end
+ng serve          # Dev server
+ng build          # Production build
+ng test           # Unit tests
+ng lint           # Linting
+ng e2e            # End-to-end tests
 ```
-
-### Estructura de Commits
+### Commit Convention
 ```
 🎉 Initial commit
-✨ Add: Nueva funcionalidad
-🐛 Fix: Corrección de bug
-📝 Docs: Documentación
-🎨 Style: Mejoras visuales
-⚡ Perf: Optimización
-🔧 Config: Configuración
-🚀 Deploy: Despliegue
+✨ Add: Feature
+🐛 Fix: Bug fix
+📝 Docs: Documentation
+🎨 Style: UI / styling
+⚡ Perf: Performance
+🔧 Config: Configuration
+🚀 Deploy: Deployment
 ```
 
 ## 📝 Roadmap
+### Current Release (v1.1)
+- ✅ 3D visualization of 6k+ satellites
+- ✅ Real TLE ingestion & SGP4 propagation
+- ✅ ML handover scoring engine
+- ✅ Dual time modes (real/sim)
+- ✅ Smart label capping & overlap avoidance
+- ✅ Modular dock + flyout UI overhaul
+- ✅ Expanded global city geolocation search
+- ✅ Floating dropdowns with outside click / ESC dismissal
+- ✅ Adaptive worker latency lead smoothing
 
-### Versión Actual (v1.0)
-- ✅ Visualización 3D con 6000+ satélites
-- ✅ Carga de datos TLE reales
-- ✅ Sistema de handover ML inteligente
-- ✅ Controles de cámara orbital precisos
-- ✅ Sincronización temporal dual
-- ✅ Sistema de etiquetas anti-solapamiento
-- ✅ Optimización performance con Web Workers
+### Upcoming
+- 🔄 Advanced configuration panel
+- 🔄 Real‑time performance metrics overlay
+- 🔄 Simulation data export (JSON/CSV)
+- 🔄 VR / AR exploratory mode
+- 🔄 REST API for remote control
+- 🔄 Predictive handover analytics
+- 🔄 Weather data integration
+- 🔄 Persistent user preferences (local storage)
 
-### Próximas Versiones
-- 🔄 Interfaz de configuración avanzada
-- 🔄 Métricas de performance en tiempo real
-- 🔄 Exportación de datos de simulación (JSON/CSV)
-- 🔄 Modo VR/AR para inmersión total
-- 🔄 API REST para configuración remota
-- 🔄 Análisis predictivo de handovers
-- 🔄 Integración con datos meteorológicos
-
-## 🤝 Contribución
-
-1. Fork el proyecto
-2. Crear branch para feature (`git checkout -b feature/nueva-funcionalidad`)
-3. Commit cambios (`git commit -m '✨ Add: Nueva funcionalidad'`)
-4. Push al branch (`git push origin feature/nueva-funcionalidad`)
-5. Abrir Pull Request
-
+## 🤝 Contributing
+1. Fork repository
+2. Create feature branch (`git checkout -b feature/awesome`)
+3. Commit (`git commit -m '✨ Add: Awesome'`)
+4. Push (`git push origin feature/awesome`)
+5. Open Pull Request
 ### Guidelines
-- Seguir convenciones de TypeScript strict
-- Mantener performance de 60 FPS
-- Documentar funciones complejas
-- Tests unitarios para nuevas features
+- Keep 60 FPS performance target
+- Document complex math / transforms
+- Add unit tests for new logic
+- Follow strict TypeScript practices
 
-## 📄 Licencia
+## 📄 License
+MIT License – see [LICENSE](LICENSE) for details.
 
-Este proyecto está licenciado bajo la MIT License - ver el archivo [LICENSE](LICENSE) para detalles.
+## 👨‍💻 Author
+**Simulator Developer**
+- GitHub: [@your-user](https://github.com/your-user)
+- LinkedIn: [Your Profile](https://linkedin.com/in/your-profile)
 
-## 👨‍💻 Autor
-
-**Desarrollador del Simulador**
-- GitHub: [@tu-usuario](https://github.com/tu-usuario)
-- LinkedIn: [Tu Perfil](https://linkedin.com/in/tu-perfil)
-
-## 🙏 Agradecimientos
-
-- **CelesTrak**: Por los datos TLE actualizados de satélites
-- **Three.js Community**: Por la documentación y ejemplos 3D
-- **satellite.js**: Por la implementación SGP4 precisa
-- **Angular Team**: Por el framework robusto
-- **NASA**: Por las texturas terrestres de dominio público
+## 🙏 Acknowledgements
+- CelesTrak: Updated TLE data
+- Three.js Community: 3D docs & examples
+- satellite.js: Accurate SGP4 implementation
+- Angular Team: Robust framework
+- NASA: Public domain Earth textures
 
 ---
 
-⭐ **¡Si te gusta este proyecto, dale una estrella!** ⭐
+⭐ If you find this project useful, please give it a star! ⭐
 
-## 🔗 Enlaces Útiles
-
-- [Documentación Three.js](https://threejs.org/docs/)
+## 🔗 Useful Links
+- [Three.js Docs](https://threejs.org/docs/)
 - [satellite.js GitHub](https://github.com/shashwatak/satellite-js)
 - [CelesTrak TLE Data](https://celestrak.com/)
 - [Angular Documentation](https://angular.io/docs)

@@ -1,0 +1,347 @@
+[
+    { "name": "Madrid, Spain", "lat": 40.4168, "lon": -3.7038, "country": "Spain" },
+    { "name": "Barcelona, Spain", "lat": 41.3874, "lon": 2.1686, "country": "Spain" },
+    { "name": "Valencia, Spain", "lat": 39.4699, "lon": -0.3763, "country": "Spain" },
+    { "name": "Seville, Spain", "lat": 37.3891, "lon": -5.9845, "country": "Spain" },
+    { "name": "Bilbao, Spain", "lat": 43.2630, "lon": -2.9350, "country": "Spain" },
+    { "name": "Malaga, Spain", "lat": 36.7213, "lon": -4.4213, "country": "Spain" },
+
+    { "name": "London, UK", "lat": 51.5074, "lon": -0.1278, "country": "UK" },
+    { "name": "Manchester, UK", "lat": 53.4808, "lon": -2.2426, "country": "UK" },
+    { "name": "Birmingham, UK", "lat": 52.4862, "lon": -1.8904, "country": "UK" },
+    { "name": "Liverpool, UK", "lat": 53.4084, "lon": -2.9916, "country": "UK" },
+    { "name": "Edinburgh, UK", "lat": 55.9533, "lon": -3.1883, "country": "UK" },
+    { "name": "Glasgow, UK", "lat": 55.8642, "lon": -4.2518, "country": "UK" },
+
+    { "name": "Paris, France", "lat": 48.8566, "lon": 2.3522, "country": "France" },
+    { "name": "Marseille, France", "lat": 43.2965, "lon": 5.3698, "country": "France" },
+    { "name": "Lyon, France", "lat": 45.7640, "lon": 4.8357, "country": "France" },
+    { "name": "Toulouse, France", "lat": 43.6047, "lon": 1.4442, "country": "France" },
+    { "name": "Nice, France", "lat": 43.7102, "lon": 7.2620, "country": "France" },
+
+    { "name": "Berlin, Germany", "lat": 52.5200, "lon": 13.4050, "country": "Germany" },
+    { "name": "Munich, Germany", "lat": 48.1351, "lon": 11.5820, "country": "Germany" },
+    { "name": "Frankfurt, Germany", "lat": 50.1109, "lon": 8.6821, "country": "Germany" },
+    { "name": "Hamburg, Germany", "lat": 53.5511, "lon": 9.9937, "country": "Germany" },
+    { "name": "Cologne, Germany", "lat": 50.9375, "lon": 6.9603, "country": "Germany" },
+    { "name": "Stuttgart, Germany", "lat": 48.7758, "lon": 9.1829, "country": "Germany" },
+
+    { "name": "Rome, Italy", "lat": 41.9028, "lon": 12.4964, "country": "Italy" },
+    { "name": "Milan, Italy", "lat": 45.4642, "lon": 9.1900, "country": "Italy" },
+    { "name": "Naples, Italy", "lat": 40.8518, "lon": 14.2681, "country": "Italy" },
+    { "name": "Turin, Italy", "lat": 45.0703, "lon": 7.6869, "country": "Italy" },
+    { "name": "Florence, Italy", "lat": 43.7696, "lon": 11.2558, "country": "Italy" },
+    { "name": "Venice, Italy", "lat": 45.4408, "lon": 12.3155, "country": "Italy" },
+
+    { "name": "Amsterdam, Netherlands", "lat": 52.3676, "lon": 4.9041, "country": "Netherlands" },
+    { "name": "Rotterdam, Netherlands", "lat": 51.9244, "lon": 4.4777, "country": "Netherlands" },
+    { "name": "The Hague, Netherlands", "lat": 52.0705, "lon": 4.3007, "country": "Netherlands" },
+    { "name": "Utrecht, Netherlands", "lat": 52.0907, "lon": 5.1214, "country": "Netherlands" },
+    { "name": "Eindhoven, Netherlands", "lat": 51.4416, "lon": 5.4697, "country": "Netherlands" },
+
+    { "name": "Brussels, Belgium", "lat": 50.8503, "lon": 4.3517, "country": "Belgium" },
+    { "name": "Antwerp, Belgium", "lat": 51.2194, "lon": 4.4025, "country": "Belgium" },
+    { "name": "Ghent, Belgium", "lat": 51.0543, "lon": 3.7174, "country": "Belgium" },
+
+    { "name": "Zurich, Switzerland", "lat": 47.3769, "lon": 8.5417, "country": "Switzerland" },
+    { "name": "Geneva, Switzerland", "lat": 46.2044, "lon": 6.1432, "country": "Switzerland" },
+    { "name": "Basel, Switzerland", "lat": 47.5596, "lon": 7.5886, "country": "Switzerland" },
+    { "name": "Lausanne, Switzerland", "lat": 46.5197, "lon": 6.6323, "country": "Switzerland" },
+    { "name": "Bern, Switzerland", "lat": 46.9480, "lon": 7.4474, "country": "Switzerland" },
+
+    { "name": "Vienna, Austria", "lat": 48.2082, "lon": 16.3738, "country": "Austria" },
+    { "name": "Salzburg, Austria", "lat": 47.8095, "lon": 13.0550, "country": "Austria" },
+    { "name": "Graz, Austria", "lat": 47.0707, "lon": 15.4395, "country": "Austria" },
+    { "name": "Innsbruck, Austria", "lat": 47.2692, "lon": 11.4041, "country": "Austria" },
+    { "name": "Linz, Austria", "lat": 48.3069, "lon": 14.2858, "country": "Austria" },
+
+    { "name": "Prague, Czech Republic", "lat": 50.0755, "lon": 14.4378, "country": "Czech Republic" },
+    { "name": "Brno, Czech Republic", "lat": 49.1951, "lon": 16.6068, "country": "Czech Republic" },
+    { "name": "Ostrava, Czech Republic", "lat": 49.8209, "lon": 18.2625, "country": "Czech Republic" },
+
+    { "name": "Budapest, Hungary", "lat": 47.4979, "lon": 19.0402, "country": "Hungary" },
+    { "name": "Debrecen, Hungary", "lat": 47.5316, "lon": 21.6273, "country": "Hungary" },
+
+    { "name": "Bucharest, Romania", "lat": 44.4268, "lon": 26.1025, "country": "Romania" },
+    { "name": "Cluj-Napoca, Romania", "lat": 46.7712, "lon": 23.6236, "country": "Romania" },
+
+    { "name": "Sofia, Bulgaria", "lat": 42.6977, "lon": 23.3219, "country": "Bulgaria" },
+    { "name": "Plovdiv, Bulgaria", "lat": 42.1354, "lon": 24.7453, "country": "Bulgaria" },
+
+    { "name": "Bratislava, Slovakia", "lat": 48.1486, "lon": 17.1077, "country": "Slovakia" },
+    { "name": "Košice, Slovakia", "lat": 48.7164, "lon": 21.2611, "country": "Slovakia" },
+
+    { "name": "Ljubljana, Slovenia", "lat": 46.0569, "lon": 14.5058, "country": "Slovenia" },
+    { "name": "Maribor, Slovenia", "lat": 46.5547, "lon": 15.6459, "country": "Slovenia" },
+
+    { "name": "Zagreb, Croatia", "lat": 45.8150, "lon": 15.9819, "country": "Croatia" },
+    { "name": "Split, Croatia", "lat": 43.5081, "lon": 16.4402, "country": "Croatia" },
+    { "name": "Dubrovnik, Croatia", "lat": 42.6507, "lon": 18.0944, "country": "Croatia" },
+
+    { "name": "Riga, Latvia", "lat": 56.9496, "lon": 24.1052, "country": "Latvia" },
+    { "name": "Vilnius, Lithuania", "lat": 54.6872, "lon": 25.2797, "country": "Lithuania" },
+    { "name": "Kaunas, Lithuania", "lat": 54.8985, "lon": 23.9036, "country": "Lithuania" },
+    { "name": "Tallinn, Estonia", "lat": 59.4370, "lon": 24.7536, "country": "Estonia" },
+
+    { "name": "Stockholm, Sweden", "lat": 59.3293, "lon": 18.0686, "country": "Sweden" },
+    { "name": "Gothenburg, Sweden", "lat": 57.7089, "lon": 11.9746, "country": "Sweden" },
+    { "name": "Malmö, Sweden", "lat": 55.6050, "lon": 13.0038, "country": "Sweden" },
+
+    { "name": "Oslo, Norway", "lat": 59.9139, "lon": 10.7522, "country": "Norway" },
+    { "name": "Bergen, Norway", "lat": 60.3913, "lon": 5.3221, "country": "Norway" },
+    { "name": "Trondheim, Norway", "lat": 63.4305, "lon": 10.3951, "country": "Norway" },
+
+    { "name": "Copenhagen, Denmark", "lat": 55.6761, "lon": 12.5683, "country": "Denmark" },
+    { "name": "Aarhus, Denmark", "lat": 56.1629, "lon": 10.2039, "country": "Denmark" },
+    { "name": "Odense, Denmark", "lat": 55.4038, "lon": 10.4024, "country": "Denmark" },
+
+    { "name": "Helsinki, Finland", "lat": 60.1699, "lon": 24.9384, "country": "Finland" },
+    { "name": "Espoo, Finland", "lat": 60.2055, "lon": 24.6559, "country": "Finland" },
+    { "name": "Tampere, Finland", "lat": 61.4978, "lon": 23.7610, "country": "Finland" },
+
+    { "name": "Warsaw, Poland", "lat": 52.2297, "lon": 21.0122, "country": "Poland" },
+    { "name": "Krakow, Poland", "lat": 50.0647, "lon": 19.9450, "country": "Poland" },
+    { "name": "Gdansk, Poland", "lat": 54.3520, "lon": 18.6466, "country": "Poland" },
+    { "name": "Wroclaw, Poland", "lat": 51.1079, "lon": 17.0385, "country": "Poland" },
+    { "name": "Poznan, Poland", "lat": 52.4064, "lon": 16.9252, "country": "Poland" },
+
+    { "name": "Lisbon, Portugal", "lat": 38.7223, "lon": -9.1393, "country": "Portugal" },
+    { "name": "Porto, Portugal", "lat": 41.1579, "lon": -8.6291, "country": "Portugal" },
+    { "name": "Braga, Portugal", "lat": 41.5454, "lon": -8.4265, "country": "Portugal" },
+
+    { "name": "Athens, Greece", "lat": 37.9755, "lon": 23.7348, "country": "Greece" },
+    { "name": "Thessaloniki, Greece", "lat": 40.6401, "lon": 22.9444, "country": "Greece" },
+    { "name": "Patras, Greece", "lat": 38.2466, "lon": 21.7346, "country": "Greece" },
+
+    { "name": "Dublin, Ireland", "lat": 53.3498, "lon": -6.2603, "country": "Ireland" },
+    { "name": "Cork, Ireland", "lat": 51.8985, "lon": -8.4756, "country": "Ireland" },
+    { "name": "Galway, Ireland", "lat": 53.2707, "lon": -9.0568, "country": "Ireland" },
+
+    { "name": "Reykjavik, Iceland", "lat": 64.1466, "lon": -21.9426, "country": "Iceland" },
+    { "name": "Akureyri, Iceland", "lat": 65.6885, "lon": -18.1262, "country": "Iceland" },
+
+    { "name": "Moscow, Russia", "lat": 55.7558, "lon": 37.6176, "country": "Russia" },
+    { "name": "St. Petersburg, Russia", "lat": 59.9311, "lon": 30.3609, "country": "Russia" },
+    { "name": "Novosibirsk, Russia", "lat": 55.0084, "lon": 82.9357, "country": "Russia" },
+    { "name": "Yekaterinburg, Russia", "lat": 56.8389, "lon": 60.6057, "country": "Russia" },
+    { "name": "Kazan, Russia", "lat": 55.8304, "lon": 49.0661, "country": "Russia" },
+
+    { "name": "Kyiv, Ukraine", "lat": 50.4501, "lon": 30.5234, "country": "Ukraine" },
+    { "name": "Lviv, Ukraine", "lat": 49.8397, "lon": 24.0297, "country": "Ukraine" },
+    { "name": "Odessa, Ukraine", "lat": 46.4825, "lon": 30.7233, "country": "Ukraine" },
+
+    { "name": "New York, USA", "lat": 40.7128, "lon": -74.0060, "country": "USA" },
+    { "name": "Los Angeles, USA", "lat": 34.0522, "lon": -118.2437, "country": "USA" },
+    { "name": "Chicago, USA", "lat": 41.8781, "lon": -87.6298, "country": "USA" },
+    { "name": "San Francisco, USA", "lat": 37.7749, "lon": -122.4194, "country": "USA" },
+    { "name": "Washington DC, USA", "lat": 38.9072, "lon": -77.0369, "country": "USA" },
+    { "name": "Boston, USA", "lat": 42.3601, "lon": -71.0589, "country": "USA" },
+    { "name": "Miami, USA", "lat": 25.7617, "lon": -80.1918, "country": "USA" },
+    { "name": "Las Vegas, USA", "lat": 36.1699, "lon": -115.1398, "country": "USA" },
+    { "name": "Dallas, USA", "lat": 32.7767, "lon": -96.7970, "country": "USA" },
+    { "name": "Houston, USA", "lat": 29.7604, "lon": -95.3698, "country": "USA" },
+    { "name": "Seattle, USA", "lat": 47.6062, "lon": -122.3321, "country": "USA" },
+    { "name": "Atlanta, USA", "lat": 33.7490, "lon": -84.3880, "country": "USA" },
+    { "name": "Denver, USA", "lat": 39.7392, "lon": -104.9903, "country": "USA" },
+    { "name": "Philadelphia, USA", "lat": 39.9526, "lon": -75.1652, "country": "USA" },
+
+    { "name": "Toronto, Canada", "lat": 43.6532, "lon": -79.3832, "country": "Canada" },
+    { "name": "Vancouver, Canada", "lat": 49.2827, "lon": -123.1207, "country": "Canada" },
+    { "name": "Montreal, Canada", "lat": 45.5017, "lon": -73.5673, "country": "Canada" },
+    { "name": "Calgary, Canada", "lat": 51.0447, "lon": -114.0719, "country": "Canada" },
+    { "name": "Ottawa, Canada", "lat": 45.4215, "lon": -75.6972, "country": "Canada" },
+
+    { "name": "Mexico City, Mexico", "lat": 19.4326, "lon": -99.1332, "country": "Mexico" },
+    { "name": "Guadalajara, Mexico", "lat": 20.6597, "lon": -103.3496, "country": "Mexico" },
+    { "name": "Monterrey, Mexico", "lat": 25.6866, "lon": -100.3161, "country": "Mexico" },
+    { "name": "Puebla, Mexico", "lat": 19.0414, "lon": -98.2063, "country": "Mexico" },
+    { "name": "Tijuana, Mexico", "lat": 32.5149, "lon": -117.0382, "country": "Mexico" },
+
+    { "name": "São Paulo, Brazil", "lat": -23.5558, "lon": -46.6396, "country": "Brazil" },
+    { "name": "Rio de Janeiro, Brazil", "lat": -22.9068, "lon": -43.1729, "country": "Brazil" },
+    { "name": "Brasília, Brazil", "lat": -15.8267, "lon": -47.9218, "country": "Brazil" },
+    { "name": "Salvador, Brazil", "lat": -12.9777, "lon": -38.5016, "country": "Brazil" },
+    { "name": "Belo Horizonte, Brazil", "lat": -19.9167, "lon": -43.9345, "country": "Brazil" },
+
+    { "name": "Buenos Aires, Argentina", "lat": -34.6118, "lon": -58.3960, "country": "Argentina" },
+    { "name": "Córdoba, Argentina", "lat": -31.4201, "lon": -64.1888, "country": "Argentina" },
+    { "name": "Rosario, Argentina", "lat": -32.9587, "lon": -60.6933, "country": "Argentina" },
+    { "name": "Mendoza, Argentina", "lat": -32.8895, "lon": -68.8458, "country": "Argentina" },
+
+    { "name": "Lima, Peru", "lat": -12.0464, "lon": -77.0428, "country": "Peru" },
+    { "name": "Arequipa, Peru", "lat": -16.4090, "lon": -71.5375, "country": "Peru" },
+    { "name": "Cusco, Peru", "lat": -13.5319, "lon": -71.9675, "country": "Peru" },
+
+    { "name": "Santiago, Chile", "lat": -33.4489, "lon": -70.6693, "country": "Chile" },
+    { "name": "Valparaíso, Chile", "lat": -33.0472, "lon": -71.6127, "country": "Chile" },
+    { "name": "Concepción, Chile", "lat": -36.8270, "lon": -73.0503, "country": "Chile" },
+
+    { "name": "Bogotá, Colombia", "lat": 4.7110, "lon": -74.0721, "country": "Colombia" },
+    { "name": "Medellín, Colombia", "lat": 6.2442, "lon": -75.5812, "country": "Colombia" },
+    { "name": "Cali, Colombia", "lat": 3.4516, "lon": -76.5320, "country": "Colombia" },
+    { "name": "Cartagena, Colombia", "lat": 10.3910, "lon": -75.4794, "country": "Colombia" },
+
+    { "name": "Caracas, Venezuela", "lat": 10.4806, "lon": -66.9036, "country": "Venezuela" },
+    { "name": "Maracaibo, Venezuela", "lat": 10.6545, "lon": -71.6533, "country": "Venezuela" },
+    { "name": "Valencia, Venezuela", "lat": 10.1620, "lon": -68.0077, "country": "Venezuela" },
+
+    { "name": "Quito, Ecuador", "lat": -0.1807, "lon": -78.4678, "country": "Ecuador" },
+    { "name": "Guayaquil, Ecuador", "lat": -2.1700, "lon": -79.9224, "country": "Ecuador" },
+
+    { "name": "La Paz, Bolivia", "lat": -16.5000, "lon": -68.1193, "country": "Bolivia" },
+    { "name": "Santa Cruz, Bolivia", "lat": -17.7833, "lon": -63.1821, "country": "Bolivia" },
+
+    { "name": "Montevideo, Uruguay", "lat": -34.9011, "lon": -56.1645, "country": "Uruguay" },
+    { "name": "Punta del Este, Uruguay", "lat": -34.9594, "lon": -54.9436, "country": "Uruguay" },
+
+    { "name": "São Paulo, Brazil", "lat": -23.5558, "lon": -46.6396, "country": "Brazil" },
+
+    { "name": "Sydney, Australia", "lat": -33.8688, "lon": 151.2093, "country": "Australia" },
+    { "name": "Melbourne, Australia", "lat": -37.8136, "lon": 144.9631, "country": "Australia" },
+    { "name": "Brisbane, Australia", "lat": -27.4698, "lon": 153.0251, "country": "Australia" },
+    { "name": "Perth, Australia", "lat": -31.9505, "lon": 115.8605, "country": "Australia" },
+    { "name": "Adelaide, Australia", "lat": -34.9285, "lon": 138.6007, "country": "Australia" },
+
+    { "name": "Auckland, New Zealand", "lat": -36.8485, "lon": 174.7633, "country": "New Zealand" },
+    { "name": "Wellington, New Zealand", "lat": -41.2865, "lon": 174.7762, "country": "New Zealand" },
+    { "name": "Christchurch, New Zealand", "lat": -43.5321, "lon": 172.6362, "country": "New Zealand" },
+    { "name": "Queenstown, New Zealand", "lat": -45.0312, "lon": 168.6626, "country": "New Zealand" },
+
+    { "name": "Tokyo, Japan", "lat": 35.6762, "lon": 139.6503, "country": "Japan" },
+    { "name": "Osaka, Japan", "lat": 34.6937, "lon": 135.5023, "country": "Japan" },
+    { "name": "Kyoto, Japan", "lat": 35.0116, "lon": 135.7681, "country": "Japan" },
+    { "name": "Nagoya, Japan", "lat": 35.1815, "lon": 136.9066, "country": "Japan" },
+    { "name": "Yokohama, Japan", "lat": 35.4437, "lon": 139.6380, "country": "Japan" },
+    { "name": "Sapporo, Japan", "lat": 43.0618, "lon": 141.3545, "country": "Japan" },
+
+    { "name": "Beijing, China", "lat": 39.9042, "lon": 116.4074, "country": "China" },
+    { "name": "Shanghai, China", "lat": 31.2304, "lon": 121.4737, "country": "China" },
+    { "name": "Shenzhen, China", "lat": 22.5431, "lon": 114.0579, "country": "China" },
+    { "name": "Guangzhou, China", "lat": 23.1291, "lon": 113.2644, "country": "China" },
+    { "name": "Chengdu, China", "lat": 30.5728, "lon": 104.0668, "country": "China" },
+    { "name": "Wuhan, China", "lat": 30.5928, "lon": 114.3055, "country": "China" },
+    { "name": "Xi'an, China", "lat": 34.3416, "lon": 108.9398, "country": "China" },
+    { "name": "Hong Kong, China", "lat": 22.3193, "lon": 114.1694, "country": "China" },
+
+    { "name": "Mumbai, India", "lat": 19.0760, "lon": 72.8777, "country": "India" },
+    { "name": "New Delhi, India", "lat": 28.6139, "lon": 77.2090, "country": "India" },
+    { "name": "Bengaluru, India", "lat": 12.9716, "lon": 77.5946, "country": "India" },
+    { "name": "Chennai, India", "lat": 13.0827, "lon": 80.2707, "country": "India" },
+    { "name": "Kolkata, India", "lat": 22.5726, "lon": 88.3639, "country": "India" },
+    { "name": "Hyderabad, India", "lat": 17.3850, "lon": 78.4867, "country": "India" },
+
+    { "name": "Seoul, South Korea", "lat": 37.5665, "lon": 126.9780, "country": "South Korea" },
+    { "name": "Busan, South Korea", "lat": 35.1796, "lon": 129.0756, "country": "South Korea" },
+    { "name": "Incheon, South Korea", "lat": 37.4563, "lon": 126.7052, "country": "South Korea" },
+    { "name": "Daegu, South Korea", "lat": 35.8714, "lon": 128.6014, "country": "South Korea" },
+
+    { "name": "Bangkok, Thailand", "lat": 13.7563, "lon": 100.5018, "country": "Thailand" },
+    { "name": "Chiang Mai, Thailand", "lat": 18.7883, "lon": 98.9853, "country": "Thailand" },
+    { "name": "Phuket, Thailand", "lat": 7.8804, "lon": 98.3923, "country": "Thailand" },
+
+    { "name": "Jakarta, Indonesia", "lat": -6.2088, "lon": 106.8456, "country": "Indonesia" },
+    { "name": "Surabaya, Indonesia", "lat": -7.2575, "lon": 112.7521, "country": "Indonesia" },
+    { "name": "Bandung, Indonesia", "lat": -6.9175, "lon": 107.6191, "country": "Indonesia" },
+    { "name": "Denpasar (Bali), Indonesia", "lat": -8.6705, "lon": 115.2126, "country": "Indonesia" },
+
+    { "name": "Manila, Philippines", "lat": 14.5995, "lon": 120.9842, "country": "Philippines" },
+    { "name": "Cebu City, Philippines", "lat": 10.3157, "lon": 123.8854, "country": "Philippines" },
+    { "name": "Davao City, Philippines", "lat": 7.1907, "lon": 125.4553, "country": "Philippines" },
+
+    { "name": "Kuala Lumpur, Malaysia", "lat": 3.1390, "lon": 101.6869, "country": "Malaysia" },
+    { "name": "George Town, Malaysia", "lat": 5.4141, "lon": 100.3288, "country": "Malaysia" },
+    { "name": "Johor Bahru, Malaysia", "lat": 1.4927, "lon": 103.7414, "country": "Malaysia" },
+
+    { "name": "Singapore, Singapore", "lat": 1.3521, "lon": 103.8198, "country": "Singapore" },
+
+    { "name": "Hanoi, Vietnam", "lat": 21.0278, "lon": 105.8342, "country": "Vietnam" },
+    { "name": "Ho Chi Minh City, Vietnam", "lat": 10.8231, "lon": 106.6297, "country": "Vietnam" },
+    { "name": "Da Nang, Vietnam", "lat": 16.0544, "lon": 108.2022, "country": "Vietnam" },
+
+    { "name": "Karachi, Pakistan", "lat": 24.8607, "lon": 67.0011, "country": "Pakistan" },
+    { "name": "Lahore, Pakistan", "lat": 31.5204, "lon": 74.3587, "country": "Pakistan" },
+    { "name": "Islamabad, Pakistan", "lat": 33.6844, "lon": 73.0479, "country": "Pakistan" },
+
+    { "name": "Tel Aviv, Israel", "lat": 32.0853, "lon": 34.7818, "country": "Israel" },
+    { "name": "Jerusalem, Israel", "lat": 31.7683, "lon": 35.2137, "country": "Israel" },
+    { "name": "Haifa, Israel", "lat": 32.7940, "lon": 34.9896, "country": "Israel" },
+
+    { "name": "Istanbul, Turkey", "lat": 41.0082, "lon": 28.9784, "country": "Turkey" },
+    { "name": "Ankara, Turkey", "lat": 39.9334, "lon": 32.8597, "country": "Turkey" },
+    { "name": "Izmir, Turkey", "lat": 38.4237, "lon": 27.1428, "country": "Turkey" },
+    { "name": "Bursa, Turkey", "lat": 40.1950, "lon": 29.0600, "country": "Turkey" },
+
+    { "name": "Dubai, UAE", "lat": 25.2048, "lon": 55.2708, "country": "UAE" },
+    { "name": "Abu Dhabi, UAE", "lat": 24.4539, "lon": 54.3773, "country": "UAE" },
+    { "name": "Sharjah, UAE", "lat": 25.3463, "lon": 55.4209, "country": "UAE" },
+
+    { "name": "Riyadh, Saudi Arabia", "lat": 24.7136, "lon": 46.6753, "country": "Saudi Arabia" },
+    { "name": "Jeddah, Saudi Arabia", "lat": 21.4858, "lon": 39.1925, "country": "Saudi Arabia" },
+    { "name": "Mecca, Saudi Arabia", "lat": 21.3891, "lon": 39.8579, "country": "Saudi Arabia" },
+    { "name": "Medina, Saudi Arabia", "lat": 24.5247, "lon": 39.5692, "country": "Saudi Arabia" },
+
+    { "name": "Tehran, Iran", "lat": 35.6892, "lon": 51.3890, "country": "Iran" },
+    { "name": "Isfahan, Iran", "lat": 32.6546, "lon": 51.6680, "country": "Iran" },
+    { "name": "Shiraz, Iran", "lat": 29.5918, "lon": 52.5837, "country": "Iran" },
+
+    { "name": "Baghdad, Iraq", "lat": 33.3152, "lon": 44.3661, "country": "Iraq" },
+    { "name": "Basra, Iraq", "lat": 30.5085, "lon": 47.7804, "country": "Iraq" },
+    { "name": "Erbil, Iraq", "lat": 36.1911, "lon": 44.0092, "country": "Iraq" },
+
+    { "name": "Damascus, Syria", "lat": 33.5138, "lon": 36.2765, "country": "Syria" },
+    { "name": "Aleppo, Syria", "lat": 36.2021, "lon": 37.1343, "country": "Syria" },
+
+    { "name": "Cairo, Egypt", "lat": 30.0444, "lon": 31.2357, "country": "Egypt" },
+    { "name": "Alexandria, Egypt", "lat": 31.2001, "lon": 29.9187, "country": "Egypt" },
+    { "name": "Giza, Egypt", "lat": 30.0131, "lon": 31.2089, "country": "Egypt" },
+
+    { "name": "Casablanca, Morocco", "lat": 33.5731, "lon": -7.5898, "country": "Morocco" },
+    { "name": "Rabat, Morocco", "lat": 34.0209, "lon": -6.8416, "country": "Morocco" },
+    { "name": "Marrakech, Morocco", "lat": 31.6295, "lon": -7.9811, "country": "Morocco" },
+
+    { "name": "Lagos, Nigeria", "lat": 6.5244, "lon": 3.3792, "country": "Nigeria" },
+    { "name": "Abuja, Nigeria", "lat": 9.0765, "lon": 7.3986, "country": "Nigeria" },
+    { "name": "Kano, Nigeria", "lat": 12.0022, "lon": 8.5919, "country": "Nigeria" },
+
+    { "name": "Nairobi, Kenya", "lat": -1.2921, "lon": 36.8219, "country": "Kenya" },
+    { "name": "Mombasa, Kenya", "lat": -4.0435, "lon": 39.6682, "country": "Kenya" },
+    { "name": "Kisumu, Kenya", "lat": -0.0917, "lon": 34.7680, "country": "Kenya" },
+
+    { "name": "Addis Ababa, Ethiopia", "lat": 8.9806, "lon": 38.7578, "country": "Ethiopia" },
+    { "name": "Dire Dawa, Ethiopia", "lat": 9.6008, "lon": 41.8504, "country": "Ethiopia" },
+
+    { "name": "Johannesburg, South Africa", "lat": -26.2041, "lon": 28.0473, "country": "South Africa" },
+    { "name": "Cape Town, South Africa", "lat": -33.9249, "lon": 18.4241, "country": "South Africa" },
+    { "name": "Durban, South Africa", "lat": -29.8587, "lon": 31.0218, "country": "South Africa" },
+    { "name": "Pretoria, South Africa", "lat": -25.7479, "lon": 28.2293, "country": "South Africa" },
+    { "name": "Port Elizabeth, South Africa", "lat": -33.9608, "lon": 25.6022, "country": "South Africa" },
+
+    { "name": "Johannesburg, South Africa", "lat": -26.2041, "lon": 28.0473, "country": "South Africa" },
+
+    { "name": "Havana, Cuba", "lat": 23.1136, "lon": -82.3666, "country": "Cuba" },
+    { "name": "Santiago de Cuba, Cuba", "lat": 20.0169, "lon": -75.8302, "country": "Cuba" },
+
+    { "name": "Kingston, Jamaica", "lat": 17.9970, "lon": -76.7936, "country": "Jamaica" },
+    { "name": "Montego Bay, Jamaica", "lat": 18.4667, "lon": -77.9167, "country": "Jamaica" },
+
+    { "name": "Panama City, Panama", "lat": 8.9824, "lon": -79.5199, "country": "Panama" },
+    { "name": "Colón, Panama", "lat": 9.3590, "lon": -79.9014, "country": "Panama" },
+
+    { "name": "San José, Costa Rica", "lat": 9.9281, "lon": -84.0907, "country": "Costa Rica" },
+    { "name": "Limón, Costa Rica", "lat": 9.9917, "lon": -83.0350, "country": "Costa Rica" },
+
+    { "name": "Guatemala City, Guatemala", "lat": 14.6349, "lon": -90.5069, "country": "Guatemala" },
+    { "name": "Antigua Guatemala, Guatemala", "lat": 14.5606, "lon": -90.7295, "country": "Guatemala" },
+
+    { "name": "Managua, Nicaragua", "lat": 12.1364, "lon": -86.2514, "country": "Nicaragua" },
+    { "name": "León, Nicaragua", "lat": 12.4379, "lon": -86.8780, "country": "Nicaragua" },
+
+    { "name": "San Salvador, El Salvador", "lat": 13.6929, "lon": -89.2182, "country": "El Salvador" },
+    { "name": "Santa Ana, El Salvador", "lat": 13.9942, "lon": -89.5597, "country": "El Salvador" },
+
+    { "name": "Tegucigalpa, Honduras", "lat": 14.0723, "lon": -87.1921, "country": "Honduras" },
+    { "name": "San Pedro Sula, Honduras", "lat": 15.5007, "lon": -88.0339, "country": "Honduras" },
+
+    { "name": "Belize City, Belize", "lat": 17.5015, "lon": -88.1962, "country": "Belize" },
+    { "name": "Belmopan, Belize", "lat": 17.2510, "lon": -88.7590, "country": "Belize" }
+]

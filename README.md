@@ -1,4 +1,3 @@
-git clone https://github.com/tu-usuario/handover-simulator-3.git
 # 🛰️ Advanced Starlink Handover Simulator
 
 Real‑time 3D simulator of Starlink constellation handovers built with Angular, Three.js and ML‑assisted selection logic.
@@ -8,6 +7,7 @@ Real‑time 3D simulator of Starlink constellation handovers built with Angular,
 ![Three.js](https://img.shields.io/badge/Three.js-3D-green?style=for-the-badge&logo=three.js)
 
 ## ✨ Key Features
+<img width="1905" height="1061" alt="image" src="https://github.com/user-attachments/assets/6915a77c-94af-49e4-ad1f-07a79f01e41d" />
 
 ### 🌍 Realistic 3D Earth
 - High‑res textured sphere (64×64 segments)
@@ -283,4 +283,5 @@ MIT License – see [LICENSE](LICENSE) for details.
 - [Three.js Docs](https://threejs.org/docs/)
 - [satellite.js GitHub](https://github.com/shashwatak/satellite-js)
 - [CelesTrak TLE Data](https://celestrak.com/)
+
 - [Angular Documentation](https://angular.io/docs)

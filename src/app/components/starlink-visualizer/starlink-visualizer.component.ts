@@ -1,4 +1,5 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
+import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 // ✅ Aseguramos importaciones de Three.js y OrbitControls para disponer de tipos y exponerlos en window
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
@@ -63,7 +64,11 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private earthTexture: THREE.Texture | null = null;
   private isDetailedView = false;
   private readonly DETAIL_ZOOM_THRESHOLD = 0.15; // Umbral para vista detallada
-  private satLabels: THREE.Sprite[] = [];
+  private satLabels: any[] = []; // Sprite o CSS2DObject
+  private useDomLabels = true; // Usar DOM + CSS2D para estilo glass
+  private labelRenderer: CSS2DRenderer | null = null;
+  // Estados de fade por etiqueta (clave = sprite.id)
+  private labelFadeStates: Map<number, { state: 'fadingIn' | 'visible' | 'fadingOut'; startTime: number } > = new Map();
   private labelMaterial!: THREE.SpriteMaterial;
   private canvas2D!: HTMLCanvasElement;
   private context2D!: CanvasRenderingContext2D;
@@ -81,6 +86,15 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private readonly EARTH_BASE_YAW = Math.PI;    // 180° para alinear Greenwich con +X
   // Escala fija para etiqueta de satélite seleccionado cuando las etiquetas globales están ocultas
   private readonly SELECTED_LABEL_FIXED_SCALE = { x: 0.28, y: 0.075 };
+  private readonly SATELLITE_LABEL_HIDE_RADIUS = 0.18; // distancia (radio cámara) a partir de la cual NO se muestran etiquetas en vista satélite, igual para modo single y múltiple
+  // Fade de etiquetas
+  private readonly LABEL_FADE_IN_MS = 250;
+  private readonly LABEL_FADE_OUT_MS = 250;
+  // Estilos / estado de satélites
+  private readonly SAT_ACTIVE_COLOR = '#39FF14'; // verde neón
+  private readonly SAT_DECAY_COLOR = '#ff9f2b'; // naranja para descenso
+  private readonly SAT_DTC_COLOR = '#ff9d3b'; // naranja especial para satélites Direct-To-Cell [DTC]
+  private readonly SAT_DECAY_ALT_KM = 320; // Asunción: por debajo de 320km lo consideramos en fase de descenso
   // === PBR / Environment ===
   private envHdrLoaded = false;                 // Evita recargar HDR
   public glbPbrMode: boolean = true;            // público para binding (checkbox)
@@ -98,7 +112,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   public set exposure(v: number) { if (this.renderer) { this.onExposureChange(v); } }
 
   // 🎯 NUEVO: Sistema de selección y tracking de satélites
-  private selectedSatelliteIndex: number | null = null; // Índice del satélite seleccionado
+  public selectedSatelliteIndex: number | null = null; // Índice del satélite seleccionado (public para template)
   private selectedSatelliteMesh: THREE.Mesh | null = null; // 🎯 NUEVO: Mesh separado para satélite seleccionado
   private selectedSatellitePosition: THREE.Vector3 | null = null; // 🎯 ANTI-PARPADEO: Cache de posición
   private selectedSatelliteLine: THREE.Object3D | null = null; // 🎯 Ahora un grupo con cilindro + marcador superficie
@@ -128,6 +142,18 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   // ROT_X_* eliminados: rotación global -π/2 retirada definitivamente.
   // Inversión global de la componente longitudinal (Este/Oeste). Usar -1 para invertir signo de la longitud.
   private readonly LONGITUDE_SIGN = -1;
+
+  // === Camera View Modes ===
+  public viewMode: 'global' | 'satellite' = 'global';
+  private prevShowLabelsGlobal: boolean | null = null; // para restaurar preferencia de etiquetas al salir de vista satélite
+  private lastUserInteractionTime = 0; // timestamp última interacción de usuario (rotar / zoom) en vista satélite
+  private satUserGraceMs = 1500; // ventana de gracia (ms) sin fuerza de seguimiento tras interacción
+  private savedGlobalCamPos: THREE.Vector3 | null = null;
+  private savedGlobalTarget: THREE.Vector3 | null = null;
+  private savedControlParams: { rotateSpeed: number; zoomSpeed: number; minDistance: number; maxDistance: number } | null = null;
+  private cameraAnim: { active: boolean; start: number; duration: number; fromPos: THREE.Vector3; toPos: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3 } | null = null;
+  private lastTrackingSatPos: THREE.Vector3 | null = null;
+  private satViewOffset: THREE.Vector3 | null = null; // Offset estable cámara-satélite durante tracking
 
   //region Contructor [rgba(255, 0, 0, 0.1)]
   constructor(
@@ -196,6 +222,59 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
   // ========= Config Panel State =========
   public showConfigPanel = false;
+  // Estado minimizado del SAT Finder (por defecto minimizado al iniciar)
+  public searchPanelMinimized = true;
+  // Estado módulo detalle satélite
+  public satelliteInfoPanel: {
+    activeTab: 'summary' | 'info' | 'tle' | 'charts' | 'position' | 'hardware';
+    collapsed: boolean;
+    currentName: string;
+    currentNorad: string | null;
+    tabs: { id: any; label: string }[];
+    miniTopPx: number;
+  } = { activeTab: 'summary', collapsed: true, currentName: 'SAT', currentNorad: null, tabs:[
+    { id: 'summary', label: 'Satellite\nInformation' },
+    { id: 'info', label: 'Info\nPanel' },
+    { id: 'tle', label: 'TLE' },
+    { id: 'charts', label: 'Charts' },
+    { id: 'position', label: 'Current\nPosition' },
+    { id: 'hardware', label: 'Hardware' }
+  ], miniTopPx: 0 };
+  public setSatelliteInfoTab(tab: 'summary'|'info'|'tle'|'charts'|'position'|'hardware') { this.satelliteInfoPanel.activeTab = tab; }
+  public toggleSatelliteInfoPanel(){ this.satelliteInfoPanel.collapsed = !this.satelliteInfoPanel.collapsed; }
+  public onClickSatellitePanelMin(e: MouseEvent){
+    e.stopPropagation();
+    console.log('[UI] Minimizar panel sat (antes collapsed=', this.satelliteInfoPanel.collapsed,')');
+    this.toggleSatelliteInfoPanel();
+    console.log('[UI] Después collapsed=', this.satelliteInfoPanel.collapsed);
+  }
+  private updateMiniHeaderPosition() {
+    if (!this.hasSelectedSatellite) return;
+    const panel = document.querySelector('.search-panel') as HTMLElement | null;
+    if (!panel) return;
+    try {
+      const top = parseFloat(getComputedStyle(panel).top || '0');
+      const h = panel.offsetHeight;
+  const margin = 12; // separación compacta real solicitada
+      this.satelliteInfoPanel.miniTopPx = top + h + margin;
+    } catch { /* noop */ }
+  }
+  private scheduleMiniHeaderAdjust() {
+    // Recalcular varias veces durante la animación de expansión/colapso
+    let start: number | null = null;
+    const run = (ts: number) => {
+      if (start === null) start = ts;
+      this.updateMiniHeaderPosition();
+      if (ts - start! < 700) requestAnimationFrame(run); // ~0.7s ventana
+    };
+    requestAnimationFrame(run);
+  }
+  public onCloseSatellite(e: MouseEvent){
+    e.stopPropagation();
+    console.log('[UI] Cerrar panel sat');
+    this.deselectSatellite();
+  }
+  public get hasSelectedSatellite(): boolean { return this.selectedSatelliteIndex !== null; }
   public cfg = {
     showGrid: false,
     showAxes: false,
@@ -225,6 +304,16 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // Añadir el canvas al contenedor del componente
     const container = document.querySelector('.canvas-container') || document.body;
     container.appendChild(this.renderer.domElement);
+    if (this.useDomLabels) {
+      this.labelRenderer = new CSS2DRenderer();
+      this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+      this.labelRenderer.domElement.style.position = 'absolute';
+      this.labelRenderer.domElement.style.top = '0';
+      this.labelRenderer.domElement.style.left = '0';
+      this.labelRenderer.domElement.style.pointerEvents = 'none';
+      this.labelRenderer.domElement.classList.add('label-layer');
+      container.appendChild(this.labelRenderer.domElement);
+    }
     // OrbitControls sin inercia - control directo del ratón
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = false; // Eliminar inercia completamente
@@ -237,6 +326,12 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     // Listener para cambios de zoom
     this.controls.addEventListener('change', () => {
       this.updateCameraControls();
+      // Registrar interacción para suavizar seguimiento en vista satélite
+      this.lastUserInteractionTime = performance.now();
+      if (this.viewMode === 'satellite') {
+        // Actualizar offset según la acción del usuario (rotación / zoom)
+        this.satViewOffset = this.camera.position.clone().sub(this.controls.target);
+      }
     });
 
     // 🎯 NUEVO: Event listeners para selección de satélites
@@ -252,6 +347,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+  this.updateMiniHeaderPosition();
     });
   // Luces base (afectan sólo a materiales Standard/Physical)
   const hemi = new THREE.HemisphereLight(0xffffff, 0x202030, 0.9); hemi.name='__hemiLight'; this.scene.add(hemi);
@@ -261,11 +357,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
   //region Camera Controls [rgba(0, 255, 17, 0.17)]
   private updateCameraControls() {
+  // En modo satélite NO aplicamos la lógica progresiva de sensibilidad ni clamps globales
+  // para evitar "terremoto" y preservar el zoom/offset elegidos por el usuario.
+  if (this.viewMode === 'satellite') return;
     const distance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
     const wasDetailedView = this.isDetailedView;
 
     // Límite mínimo de zoom (no entrar en la Tierra)
-    const MIN_DISTANCE = 0.12; // Ajusta según necesites
+    const MIN_DISTANCE = 0.004; // Ajusta según necesites
     if (distance < MIN_DISTANCE) {
       // Forzar distancia mínima
       const direction = this.camera.position.clone().normalize();
@@ -486,6 +585,19 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (sats[index]) {
       const satName = this.extractSatelliteName(sats[index], index);
       console.log(`[SELECTION] ✅ Satélite seleccionado: ${satName} (índice: ${index})`);
+      // Actualizar cabecera mini panel
+      this.satelliteInfoPanel.currentName = satName;
+      // Intentar NORAD del TLE (catalog number posiciones 2-7 de línea 1 si existe)
+      let norad: string | null = null;
+      const l1: any = (sats[index] as any).line1;
+      if (l1 && typeof l1 === 'string' && l1.length > 7) {
+        norad = l1.substring(2,7).trim().replace(/^0+/, '') || null;
+      }
+      this.satelliteInfoPanel.currentNorad = norad;
+      // Al seleccionar mostramos mini header (colapsado) por defecto
+      this.satelliteInfoPanel.collapsed = true;
+  // Calcular posición actual
+  this.updateMiniHeaderPosition();
       // Mostrar etiqueta del seleccionado aunque labels estén desactivadas
       if (!this.cfg.showLabels) {
         this.clearSatelliteLabels();
@@ -509,6 +621,17 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   public searchQuery: string = '';
   public filteredResults: { index: number; label: string }[] = [];
   public showSearchDropdown = false;
+  public showConstellationDropdown = false;
+  public toggleConstellationDropdown() {
+    this.showConstellationDropdown = !this.showConstellationDropdown;
+  }
+  public onPickConstellation(c: string) {
+    if (c === this.selectedConstellation) { this.showConstellationDropdown = false; return; }
+    this.selectedConstellation = c;
+    this.showConstellationDropdown = false;
+    this.changeConstellation(c);
+  }
+  public onConstellationScroll(ev: any) { /* placeholder para futura paginación */ }
   public selectedConstellation: string = 'starlink';
   // Sugerencias incrementales
   private suggestionMode = false;
@@ -714,6 +837,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       this.clearOrbitalTraces();
     }
     this.selectedSatelliteIndex = null;
+    // Auto volver a vista global si estábamos en modo satélite
+    if (this.viewMode === 'satellite') {
+      this.activateGlobalView();
+    }
   }
   private createSelectedSatelliteIndicator(index: number) {
     if (!this.satsMesh) return;
@@ -721,20 +848,10 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     console.log(`[SELECTION-INDICATOR] 🟢 Creando indicador verde para satélite ${index}`);
 
     // Obtener posición del satélite seleccionado
-    const tempMatrix = new THREE.Matrix4();
-    const position = new THREE.Vector3();
-    this.satsMesh.getMatrixAt(index, tempMatrix);
-    position.setFromMatrixPosition(tempMatrix);
+    const tempMatrix = new THREE.Matrix4(); const position = new THREE.Vector3(); this.satsMesh.getMatrixAt(index, tempMatrix); position.setFromMatrixPosition(tempMatrix);
 
     // 🎯 SOLUCION Z-FIGHTING: Crear geometría ligeramente más grande y separada
-    const geometry = new THREE.SphereGeometry(0.0008);
-    const material = new THREE.MeshBasicMaterial({
-      color: this.cfg.orbitColor || '#00ff00',
-      transparent: false,
-      opacity: 1.0,
-      depthTest: true,
-      depthWrite: true
-    });
+    const geometry = new THREE.SphereGeometry(0.0008); const material = new THREE.MeshBasicMaterial({ color: this.cfg.orbitColor || '#00ff00', transparent: false, opacity: 1.0, depthTest: true, depthWrite: true });
 
     // Crear mesh del indicador
     this.selectedSatelliteMesh = new THREE.Mesh(geometry, material);
@@ -925,6 +1042,208 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       }
     }
   }
+  
+
+  // ====== Camera View Mode Logic ======
+  public activateSatelliteView() {
+    if (!this.hasSelectedSatellite || this.viewMode === 'satellite') return;
+    if (!this.satsMesh) return;
+    // Guardar estado global previo
+    this.savedGlobalCamPos = this.camera.position.clone();
+    this.savedGlobalTarget = this.controls.target.clone();
+    this.savedControlParams = { rotateSpeed: this.controls.rotateSpeed, zoomSpeed: this.controls.zoomSpeed, minDistance: this.controls.minDistance, maxDistance: this.controls.maxDistance };
+
+    // Obtener posición actual del satélite
+    const temp = new THREE.Matrix4();
+    const satPos = new THREE.Vector3();
+    this.satsMesh.getMatrixAt(this.selectedSatelliteIndex!, temp); satPos.setFromMatrixPosition(temp);
+    this.lastTrackingSatPos = satPos.clone();
+
+    // Calcular posición objetivo de cámara: ligeramente "detrás" del satélite respecto al centro de la Tierra
+    const earthCenter = new THREE.Vector3(0,0,0);
+    const dirFromEarth = satPos.clone().sub(earthCenter).normalize();
+    const satRadius = satPos.length();
+    const desiredDistanceFromSat = 0.018; // distancia radial extra (ligeramente menor para mayor acercamiento)
+    const targetCamPos = satPos.clone().add(dirFromEarth.clone().multiplyScalar(desiredDistanceFromSat));
+
+    // Datos para trayectoria orbital (slerp) evitando atravesar la Tierra
+    const fromPos = this.camera.position.clone();
+    const fromDir = fromPos.clone().normalize();
+    const toDir = satPos.clone().normalize();
+    const angle = Math.acos(THREE.MathUtils.clamp(fromDir.dot(toDir), -1, 1));
+    const useArc = angle > 0.35; // Umbral ~20°; por encima hacemos órbita perimetral
+    const arcPortion = 0.7; // % de la animación dedicado a girar perimetralmente
+    const orbitRadius = fromPos.length();
+    // Ajustar radio final: aseguramos que no sea menor que (satRadius + desiredDistanceFromSat*0.4)
+    const finalRadius = Math.max(satRadius + desiredDistanceFromSat * 0.4, Math.min(targetCamPos.length(), orbitRadius * 1.05));
+    // Recalcular cam final manteniendo dirección del sat y radio final si más seguro
+    const finalCam = targetCamPos.clone();
+    if (finalCam.length() < 0.11) { // nunca dentro de la Tierra (radio ~0.1)
+      finalCam.setLength(0.11 + desiredDistanceFromSat);
+    }
+
+    this.cameraAnim = {
+      active: true,
+      start: performance.now(),
+      duration: useArc ? 1500 : 1100,
+      fromPos: fromPos,
+      toPos: finalCam,
+      fromTarget: this.controls.target.clone(),
+      toTarget: satPos.clone()
+    } as any;
+    // Guardar metadata adicional en cameraAnim (extendemos tipo dinámicamente)
+    (this.cameraAnim as any).arc = useArc;
+    (this.cameraAnim as any).arcPortion = arcPortion;
+    (this.cameraAnim as any).fromDir = fromDir;
+    (this.cameraAnim as any).toDir = toDir;
+    (this.cameraAnim as any).orbitRadius = orbitRadius;
+    (this.cameraAnim as any).finalRadius = finalCam.length();
+    (this.cameraAnim as any).satPos = satPos.clone();
+
+    this.controls.enabled = false; // desactivar input durante animación
+    this.viewMode = 'satellite';
+
+    // Override de etiquetas: sólo la del satélite seleccionado
+    this.prevShowLabelsGlobal = this.cfg.showLabels;
+    if (this.cfg.showLabels) {
+      this.cfg.showLabels = false; // forzamos ocultar globalmente
+      this.clearSatelliteLabels();
+    }
+    // Crear / asegurar etiqueta única seleccionada
+    if (this.selectedSatelliteIndex != null) {
+      this.ensureSelectedLabel(this.selectedSatelliteIndex);
+    }
+  }
+
+  public activateGlobalView() {
+    if (this.viewMode === 'global') return;
+    // Cancelar animación / tracking
+    this.cameraAnim = null;
+    // Restaurar parámetros guardados
+    if (this.savedGlobalCamPos) this.camera.position.copy(this.savedGlobalCamPos);
+    if (this.savedGlobalTarget) this.controls.target.copy(this.savedGlobalTarget);
+    if (this.savedControlParams) {
+      this.controls.rotateSpeed = this.savedControlParams.rotateSpeed;
+      this.controls.zoomSpeed = this.savedControlParams.zoomSpeed;
+      this.controls.minDistance = this.savedControlParams.minDistance;
+      this.controls.maxDistance = this.savedControlParams.maxDistance;
+    }
+    this.controls.enabled = true;
+    this.viewMode = 'global';
+    this.lastTrackingSatPos = null;
+    // Restaurar preferencia de etiquetas
+    if (this.prevShowLabelsGlobal !== null) {
+      const changed = this.cfg.showLabels !== this.prevShowLabelsGlobal;
+      this.cfg.showLabels = this.prevShowLabelsGlobal;
+      this.prevShowLabelsGlobal = null;
+      // Regenerar etiquetas si deben mostrarse
+      if (changed && this.cfg.showLabels) {
+        this.updateSatelliteLabels();
+      } else if (!this.cfg.showLabels) {
+        this.clearSatelliteLabels();
+        if (this.selectedSatelliteIndex != null) this.ensureSelectedLabel(this.selectedSatelliteIndex);
+      }
+    }
+  }
+
+  private updateCameraAnimation() {
+    if (!this.cameraAnim || !this.cameraAnim.active) return;
+    const now = performance.now();
+    const t = (now - this.cameraAnim.start) / this.cameraAnim.duration;
+    if (t >= 1) {
+      // Finalizar
+      this.camera.position.copy(this.cameraAnim.toPos);
+      this.controls.target.copy(this.cameraAnim.toTarget);
+      this.cameraAnim.active = false;
+      this.controls.enabled = true; // reactivar con parámetros limitados para tracking
+  // Parámetros específicos de vista satélite: más sensibilidad y amplio rango de zoom
+  this.controls.rotateSpeed = (this.savedControlParams?.rotateSpeed ?? 0.3 * 1.4) ; // más rápido que global
+  this.controls.zoomSpeed = (this.savedControlParams?.zoomSpeed ?? 1.0) * 1.2;
+  this.controls.minDistance = 0.004; // permitir acercarse mucho al satélite
+  this.controls.maxDistance = 0.55; // mayor libertad de alejamiento
+      // Establecer offset estable para tracking
+      this.satViewOffset = this.camera.position.clone().sub(this.controls.target);
+      return;
+    }
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; // cubic in-out global
+    const anim: any = this.cameraAnim;
+    if (anim.arc) {
+      const arcPortion = anim.arcPortion;
+      if (t <= arcPortion) {
+        const localT = t / arcPortion;
+        // easing más suave para arco
+        const arcEase = localT < 0.5 ? 2 * localT * localT : 1 - Math.pow(-2 * localT + 2, 2) / 2;
+        // Slerp direcciones
+        const qFrom = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), anim.fromDir);
+        const qTo = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,0,1), anim.toDir);
+        const qInterp = qFrom.clone().slerp(qTo, arcEase);
+        const dir = new THREE.Vector3(0,0,1).applyQuaternion(qInterp).normalize();
+        const pos = dir.multiplyScalar(anim.orbitRadius);
+        this.camera.position.copy(pos);
+        // Target se acerca gradualmente al satélite
+        const targetLerp = this.cameraAnim.fromTarget.clone().lerp(this.cameraAnim.toTarget, arcEase * 0.8);
+        this.controls.target.copy(targetLerp);
+      } else {
+        const radialT = (t - arcPortion) / (1 - arcPortion);
+        const radialEase = radialT < 0.5 ? 4 * radialT * radialT * radialT : 1 - Math.pow(-2 * radialT + 2, 3) / 2;
+        // Dirección final ya alcanzada
+        const dir = anim.toDir.clone();
+        const radius = THREE.MathUtils.lerp(anim.orbitRadius, anim.finalRadius, radialEase);
+        const pos = dir.multiplyScalar(radius);
+        this.camera.position.copy(pos);
+        const targetLerp = this.cameraAnim.fromTarget.clone().lerp(this.cameraAnim.toTarget, 0.8 + radialEase * 0.2);
+        this.controls.target.copy(targetLerp);
+      }
+      this.camera.lookAt(this.controls.target);
+    } else {
+      // Trayectoria lineal original
+      this.camera.position.lerpVectors(this.cameraAnim.fromPos, this.cameraAnim.toPos, ease);
+      const newTarget = this.cameraAnim.fromTarget.clone().lerp(this.cameraAnim.toTarget, ease);
+      this.controls.target.copy(newTarget);
+      this.camera.lookAt(this.controls.target);
+    }
+  }
+
+  private updateSatelliteTracking() {
+    if (this.viewMode !== 'satellite' || this.cameraAnim?.active) return; // no track durante animación
+    if (this.selectedSatelliteIndex == null || !this.satsMesh) return;
+    const temp = new THREE.Matrix4();
+    const satPos = new THREE.Vector3();
+    this.satsMesh.getMatrixAt(this.selectedSatelliteIndex, temp); satPos.setFromMatrixPosition(temp);
+    if (!isFinite(satPos.x) || !isFinite(satPos.y) || !isFinite(satPos.z)) return;
+
+    // Actualizar target suavemente (LERP) para evitar jitter pero permitiendo ligera inercia
+    const smoothedTarget = this.controls.target.clone().lerp(satPos, 0.40);
+    this.controls.target.copy(smoothedTarget);
+
+    // Offset estable: si no existe aún (fallback)
+    if (!this.satViewOffset) {
+      this.satViewOffset = this.camera.position.clone().sub(smoothedTarget);
+    }
+    const now = performance.now();
+    const inactiveMs = now - this.lastUserInteractionTime;
+    // Factor de seguimiento que va de 0 (justo después de interacción) a 1 tras ventana de gracia
+    const activityFactor = THREE.MathUtils.clamp(inactiveMs / this.satUserGraceMs, 0, 1);
+    // Lerp dinámico: cuando usuario interactúa casi no forzamos posicionamiento
+    const followLerp = 0.1 * activityFactor; // máximo 0.18, suficiente suave
+
+    if (followLerp > 0) {
+      const desiredPos = smoothedTarget.clone().add(this.satViewOffset);
+      this.camera.position.lerp(desiredPos, followLerp);
+    } else {
+      // Mientras está interactuando, refrescar offset a su valor actual para congelarlo
+      this.satViewOffset = this.camera.position.clone().sub(smoothedTarget);
+    }
+
+    // Guardar última pos satélite
+    this.lastTrackingSatPos = satPos.clone();
+    this.camera.lookAt(this.controls.target);
+
+    // Asegurar etiqueta única (override activo) sin recrear innecesariamente muchas
+    if (this.prevShowLabelsGlobal !== null && this.selectedSatelliteIndex != null) {
+      this.ensureSelectedLabel(this.selectedSatelliteIndex);
+    }
+  }
   //endregion
 
 
@@ -1068,61 +1387,81 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     });
   }
   private createTextTexture(text: string): THREE.Texture {
-    // Canvas optimizado para texto nítido y limpio
+    // Determinar color de estado (si el texto incluye identificador intentar leer datos del satélite seleccionado más tarde si fuese necesario)
+    // Aquí solo decidimos el color por defecto (verde). Cambiaremos según heurística de descenso si aplicable desde ensureSelectedLabel/createSatelliteLabel.
+    // Para poder colorear por estado necesitamos exponer un método auxiliar que reconstruya con color; pero para simplicidad pasamos el texto
     const canvas = document.createElement('canvas');
     canvas.width = 512;
-    canvas.height = 128;
+    canvas.height = 100; // un poco más alto para glow suave
     const ctx = canvas.getContext('2d')!;
-
-    // Configuración de máxima calidad
-    ctx.imageSmoothingEnabled = false; // Desactivar para texto más nítido
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Configurar fuente moderna y limpia
-    const fontSize = 30;
-    ctx.font = `${fontSize}px "Segoe UI", "Roboto", "Inter", "SF Pro Display", system-ui, sans-serif`;
-    ctx.textAlign = 'center';
+    const fontSize = 42; // aumentar para más nitidez / peso
+    ctx.font = `${fontSize}px 'Inter', 'Segoe UI', 'Roboto', system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
 
-    // Posición centrada
-    const x = canvas.width / 2;
-    const y = canvas.height / 2;
-
-    // Calcular dimensiones del texto para el fondo
     const metrics = ctx.measureText(text);
     const textWidth = metrics.width;
-    const textHeight = fontSize;
+    const pillPaddingX = 44; // espacio lateral incluyendo círculo
+    const pillPaddingY = 28;
+    const circleRadius = 34; // círculo de estado
+    const gap = 24; // espacio entre círculo y texto
+    const pillWidth = pillPaddingX + circleRadius * 2 + gap + textWidth + pillPaddingX * 0.4;
+    const pillHeight = circleRadius * 2 + pillPaddingY;
+    const x0 = (canvas.width - pillWidth) / 2;
+    const y0 = (canvas.height - pillHeight) / 2;
+    const radius = pillHeight / 2; // pill total
 
-    // Padding para el fondo
-    const padding = 8;
-    const bgWidth = textWidth + padding * 2;
-    const bgHeight = textHeight + padding * 2;
-
-    // Fondo semi-transparente oscuro con bordes redondeados
-    ctx.fillStyle = 'rgba(20, 25, 35, 0.85)'; // Fondo oscuro semi-transparente
-
-    // Crear rectángulo con bordes redondeados manualmente
-    const radius = 6;
-    const rectX = x - bgWidth / 2;
-    const rectY = y - bgHeight / 2;
-
+    // Fondo glass: gradiente + translucidez (similar al panel Finder pero ligeramente más claro)
+    const grad = ctx.createLinearGradient(0, y0, 0, y0 + pillHeight);
+    grad.addColorStop(0, 'rgba(30, 42, 60, 0.55)');
+    grad.addColorStop(1, 'rgba(20, 28, 40, 0.42)');
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(rectX + radius, rectY);
-    ctx.lineTo(rectX + bgWidth - radius, rectY);
-    ctx.quadraticCurveTo(rectX + bgWidth, rectY, rectX + bgWidth, rectY + radius);
-    ctx.lineTo(rectX + bgWidth, rectY + bgHeight - radius);
-    ctx.quadraticCurveTo(rectX + bgWidth, rectY + bgHeight, rectX + bgWidth - radius, rectY + bgHeight);
-    ctx.lineTo(rectX + radius, rectY + bgHeight);
-    ctx.quadraticCurveTo(rectX, rectY + bgHeight, rectX, rectY + bgHeight - radius);
-    ctx.lineTo(rectX, rectY + radius);
-    ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
+    ctx.moveTo(x0 + radius, y0);
+    ctx.lineTo(x0 + pillWidth - radius, y0);
+    ctx.quadraticCurveTo(x0 + pillWidth, y0, x0 + pillWidth, y0 + radius);
+    ctx.lineTo(x0 + pillWidth, y0 + pillHeight - radius);
+    ctx.quadraticCurveTo(x0 + pillWidth, y0 + pillHeight, x0 + pillWidth - radius, y0 + pillHeight);
+    ctx.lineTo(x0 + radius, y0 + pillHeight);
+    ctx.quadraticCurveTo(x0, y0 + pillHeight, x0, y0 + pillHeight - radius);
+    ctx.lineTo(x0, y0 + radius);
+    ctx.quadraticCurveTo(x0, y0, x0 + radius, y0);
     ctx.closePath();
     ctx.fill();
 
-    // Texto principal blanco y nítido
+    // Borde con glow externo suave (verde por defecto)
+    const borderColor = this.SAT_ACTIVE_COLOR;
+    ctx.save();
+    ctx.shadowColor = borderColor + 'AA';
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = borderColor;
+    ctx.stroke();
+    ctx.restore();
+
+    // Círculo de estado (verde) con glow
+    const cx = x0 + pillPaddingX + circleRadius;
+    const cy = y0 + pillHeight / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, circleRadius, 0, Math.PI * 2);
+    const circleGrad = ctx.createRadialGradient(cx, cy, circleRadius * 0.2, cx, cy, circleRadius);
+    circleGrad.addColorStop(0, this.SAT_ACTIVE_COLOR);
+    circleGrad.addColorStop(1, this.SAT_ACTIVE_COLOR + '22');
+    ctx.fillStyle = circleGrad;
+    ctx.shadowColor = this.SAT_ACTIVE_COLOR;
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.restore();
+
+    // Texto
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(text, x, y);
+    const textX = cx + circleRadius + gap;
+    const textY = cy + 2; // ajuste fino vertical
+    ctx.font = `${fontSize}px 'Inter', 'Segoe UI', 'Roboto', system-ui, sans-serif`;
+    ctx.fillText(text, textX, textY);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.generateMipmaps = false;
@@ -1130,12 +1469,88 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     texture.magFilter = THREE.LinearFilter;
     texture.format = THREE.RGBAFormat;
     texture.needsUpdate = true;
-
+    return texture;
+  }
+  private createStatusLabelTexture(text: string, active: boolean): THREE.Texture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    const fontSize = 42;
+    ctx.font = `${fontSize}px 'Inter', 'Segoe UI', 'Roboto', system-ui, sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const metrics = ctx.measureText(text);
+    const textWidth = metrics.width;
+    const pillPaddingX = 44;
+    const pillPaddingY = 28;
+    const circleRadius = 34;
+    const gap = 24;
+    const pillWidth = pillPaddingX + circleRadius * 2 + gap + textWidth + pillPaddingX * 0.4;
+    const pillHeight = circleRadius * 2 + pillPaddingY;
+    const x0 = (canvas.width - pillWidth) / 2;
+    const y0 = (canvas.height - pillHeight) / 2;
+    const radius = pillHeight / 2;
+    const grad = ctx.createLinearGradient(0, y0, 0, y0 + pillHeight);
+    grad.addColorStop(0, 'rgba(30, 42, 60, 0.55)');
+    grad.addColorStop(1, 'rgba(20, 28, 40, 0.42)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x0 + radius, y0);
+    ctx.lineTo(x0 + pillWidth - radius, y0);
+    ctx.quadraticCurveTo(x0 + pillWidth, y0, x0 + pillWidth, y0 + radius);
+    ctx.lineTo(x0 + pillWidth, y0 + pillHeight - radius);
+    ctx.quadraticCurveTo(x0 + pillWidth, y0 + pillHeight, x0 + pillWidth - radius, y0 + pillHeight);
+    ctx.lineTo(x0 + radius, y0 + pillHeight);
+    ctx.quadraticCurveTo(x0, y0 + pillHeight, x0, y0 + pillHeight - radius);
+    ctx.lineTo(x0, y0 + radius);
+    ctx.quadraticCurveTo(x0, y0, x0 + radius, y0);
+    ctx.closePath();
+    ctx.fill();
+    const borderColor = active ? this.SAT_ACTIVE_COLOR : this.SAT_DECAY_COLOR;
+    ctx.save();
+    ctx.shadowColor = borderColor + 'AA';
+    ctx.shadowBlur = 14;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = borderColor;
+    ctx.stroke();
+    ctx.restore();
+    // círculo estado
+    const cx = x0 + pillPaddingX + circleRadius;
+    const cy = y0 + pillHeight / 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, circleRadius, 0, Math.PI*2);
+    const circleGrad = ctx.createRadialGradient(cx, cy, circleRadius*0.2, cx, cy, circleRadius);
+    circleGrad.addColorStop(0, borderColor);
+    circleGrad.addColorStop(1, borderColor + '22');
+    ctx.fillStyle = circleGrad;
+    ctx.shadowColor = borderColor;
+    ctx.shadowBlur = 18;
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    const textX = cx + circleRadius + gap;
+    const textY = cy + 2;
+    ctx.fillText(text, textX, textY);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.generateMipmaps = false;
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.format = THREE.RGBAFormat;
+    texture.needsUpdate = true;
     return texture;
   }
   private updateSatelliteLabels() {
-    if (!this.isDetailedView || !this.satsMesh) { this.clearSatelliteLabels(); return; }
-    if (!this.cfg.showLabels) { // Solo mantener etiqueta del seleccionado
+    const allowInSatellite = this.viewMode === 'satellite';
+    if ((!this.isDetailedView && !allowInSatellite) || !this.satsMesh) { this.clearSatelliteLabels(); return; }
+    // Calcular distancia de cámara temprano para poder aplicar cutoff unificado
+    const cameraDistanceEarly = this.camera.position.distanceTo(new THREE.Vector3(0,0,0));
+    if (this.viewMode === 'satellite' && cameraDistanceEarly > this.SATELLITE_LABEL_HIDE_RADIUS) {
+      // Demasiado lejos: ocultar todas sin excepciones (consistencia)
+      this.clearSatelliteLabels();
+      return;
+    }
+    if (!this.cfg.showLabels) { // Solo mantener etiqueta del seleccionado (dinámica + escala) si dentro de cutoff
       this.clearSatelliteLabels();
       if (this.selectedSatelliteIndex != null) this.ensureSelectedLabel(this.selectedSatelliteIndex);
       return;
@@ -1155,27 +1570,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     const position = new THREE.Vector3();
     const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
 
-    // Radio de visibilidad más generoso basado en el zoom
+  // Radio de visibilidad basado en el zoom (igual lógica para global; en satélite reducimos un poco)
     let visibilityRadius: number;
     let maxLabels: number;
-
-    if (cameraDistance <= 0.12) {
-      // Zoom máximo - mostrar todos los satélites en un área pequeña
-      visibilityRadius = 0.08;
-      maxLabels = 50;
-    } else if (cameraDistance <= 0.15) {
-      // Zoom alto - área moderada
-      visibilityRadius = 0.12;
-      maxLabels = 75;
-    } else if (cameraDistance <= 0.2) {
-      // Zoom medio - área amplia
-      visibilityRadius = 0.18;
-      maxLabels = 100;
-    } else {
-      // Zoom bajo - área muy amplia
-      visibilityRadius = 0.25;
-      maxLabels = 150;
-    }
+  const radiusShrink = (this.viewMode === 'satellite') ? 0.85 : 1.0;
+  if (cameraDistance <= 0.12) { visibilityRadius = 0.08 * radiusShrink; maxLabels = 50; }
+  else if (cameraDistance <= 0.15) { visibilityRadius = 0.12 * radiusShrink; maxLabels = 75; }
+  else if (cameraDistance <= 0.2) { visibilityRadius = 0.18 * radiusShrink; maxLabels = 100; }
+  else { visibilityRadius = 0.25 * radiusShrink; maxLabels = 150; }
 
     let labelsCreated = 0;
     const candidateLabels: { sat: any, position: THREE.Vector3, index: number, distance: number }[] = [];
@@ -1224,70 +1626,75 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   }
   private createSatelliteLabel(sat: any, position: THREE.Vector3, index: number, cameraDistance: number) {
     const satName = this.extractSatelliteName(sat, index);
-    const texture = this.createTextTexture(satName);
-
-    const spriteMaterial = new THREE.SpriteMaterial({
-      map: texture,
-      transparent: true,
-      alphaTest: 0.01,
-      depthTest: false,
-      depthWrite: false,
-      sizeAttenuation: false,
-      blending: THREE.NormalBlending, // Blending normal para mejor legibilidad
-      opacity: 1.0 // Opacidad completa
-    });
-
-    const sprite = new THREE.Sprite(spriteMaterial);
-
-    // 🎯 NUEVO: Offset inteligente que garantiza proximidad pero evita solapamientos
-    const labelOffset = this.calculateSmartLabelOffset(position, index, cameraDistance);
-    sprite.position.copy(position.clone().add(labelOffset));
-
-    // Escala dinámica basada en la distancia de la cámara
-    const scaleFactor = this.calculateLabelScale(cameraDistance);
-    sprite.scale.set(scaleFactor.x, scaleFactor.y, 1);
-
-    sprite.userData = {
-      satIndex: index,
-      satName: satName,
-      satellitePosition: position.clone() // Guardamos la posición del satélite para referencia
-    };
-
-    this.scene.add(sprite);
-    this.satLabels.push(sprite);
+    let active = true;
+    const altCandidate: any = sat ? (sat as any)['height'] ?? (sat as any)['altitude'] ?? (sat as any)['alt_km'] : undefined;
+    if (typeof altCandidate === 'number') active = altCandidate >= this.SAT_DECAY_ALT_KM;
+    if (this.useDomLabels && this.labelRenderer) {
+      const el = document.createElement('div');
+      const isDtc = satName.includes('[DTC]');
+      const borderColor = isDtc ? this.SAT_DTC_COLOR : (active ? this.SAT_ACTIVE_COLOR : this.SAT_DECAY_COLOR);
+      el.innerHTML = `<span class="sat-text">${satName}</span>`;
+      // Borde más fino: mantenemos 1px y eliminamos el ring sólido adicional, sólo glow suave
+      el.style.cssText = `opacity:0;z-index:20;position:relative;display:inline-flex;align-items:center;gap:14px;padding:6px 16px 6px 14px;font:600 12px 'Inter','Segoe UI','Roboto',system-ui,sans-serif;color:#fff;border-radius:32px;background:rgba(13, 25, 48, 0.78);border:0.5px solid ${borderColor};box-shadow:0 0 8px 2px ${borderColor}40,0 4px 14px -6px rgba(0,0,0,0.65);backdrop-filter:blur(10px) saturate(160%);-webkit-backdrop-filter:blur(10px) saturate(160%);pointer-events:none;`;
+      const dot = document.createElement('span'); dot.className='dot'; dot.style.cssText=`flex:0 0 auto;margin-left:2px;width:9px;height:9px;border-radius:50%;background:${borderColor};box-shadow:0 0 6px 0.2px ${borderColor}AA;display:inline-block;`; el.insertBefore(dot, el.firstChild);
+      const obj = new CSS2DObject(el);
+      const offset = this.calculateSmartLabelOffset(position, index, cameraDistance);
+      obj.position.copy(position.clone().add(offset));
+      (obj as any).userData = { satIndex: index, satellitePosition: position.clone(), dom: true };
+      this.scene.add(obj);
+      this.satLabels.push(obj);
+      this.labelFadeStates.set(obj.id, { state: 'fadingIn', startTime: performance.now() });
+    } else {
+      const texture = this.createStatusLabelTexture(satName, active);
+      const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true, alphaTest: 0.01, depthTest: false, depthWrite: false, sizeAttenuation: false, blending: THREE.NormalBlending, opacity: 0.0 });
+      const sprite = new THREE.Sprite(spriteMaterial);
+      const labelOffset = this.calculateSmartLabelOffset(position, index, cameraDistance);
+      sprite.position.copy(position.clone().add(labelOffset));
+      const scaleFactor = this.calculateLabelScale(cameraDistance);
+      sprite.scale.set(scaleFactor.x, scaleFactor.y, 1);
+      sprite.userData = { satIndex: index, satName: satName, satellitePosition: position.clone() };
+      this.scene.add(sprite);
+      this.satLabels.push(sprite);
+      this.labelFadeStates.set(sprite.id, { state: 'fadingIn', startTime: performance.now() });
+    }
   }
   private ensureSelectedLabel(index: number) {
     if (!this.satsMesh) return;
     const sats = this.tle.getAllSatrecs();
     if (index < 0 || index >= sats.length) return;
-    // Obtener posición actual
     const tempMatrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
     this.satsMesh.getMatrixAt(index, tempMatrix);
     position.setFromMatrixPosition(tempMatrix);
     const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
-    const sat = sats[index];
-    // Crear etiqueta única si no existe ya
-    if (!this.satLabels.some(l => l.userData && l.userData['satIndex'] === index)) {
-      const name = this.extractSatelliteName(sat, index);
-      const texture = this.createTextTexture(name);
-      const spriteMaterial = new THREE.SpriteMaterial({
-        map: texture, transparent: true, alphaTest: 0.01, depthTest: false, depthWrite: false, sizeAttenuation: false
-      });
-      const sprite = new THREE.Sprite(spriteMaterial);
-      if (!this.cfg.showLabels) {
-        // Modo etiquetas ocultas: tamaño fijo independiente del zoom
-        sprite.scale.set(this.SELECTED_LABEL_FIXED_SCALE.x, this.SELECTED_LABEL_FIXED_SCALE.y, 1);
-        sprite.userData['fixedScale'] = true;
-      } else {
-        const scale = this.calculateLabelScale(cameraDistance);
-        sprite.scale.set(scale.x, scale.y, 1);
+  // Si demasiado lejos, eliminar etiqueta si existe
+  const hideThreshold = (this.viewMode === 'satellite') ? this.SATELLITE_LABEL_HIDE_RADIUS : 0.30; // umbral coherente con radios finales
+    if (cameraDistance > hideThreshold) {
+      const existingFar = this.satLabels.find(l => l.userData && l.userData['satIndex'] === index);
+      if (existingFar) {
+        this.scene.remove(existingFar);
+        if (existingFar.material.map) existingFar.material.map.dispose();
+        existingFar.material.dispose();
+        this.satLabels = this.satLabels.filter(l => l !== existingFar);
       }
-      sprite.position.copy(position.clone().add(new THREE.Vector3(0, 0.0008, 0)));
-      sprite.userData['satIndex'] = index;
-      sprite.userData['satellitePosition'] = position.clone();
-      this.scene.add(sprite);
-      this.satLabels.push(sprite);
+      return;
+    }
+    const sat = sats[index];
+  const existing = this.satLabels.find(l => l.userData && l.userData['satIndex'] === index);
+    const scaleDyn = this.calculateLabelScale(cameraDistance);
+    if (!existing) {
+      const name = this.extractSatelliteName(sat, index);
+      let active = true; const altCandidate: any = sat ? (sat as any)['height'] ?? (sat as any)['altitude'] ?? (sat as any)['alt_km'] : undefined; if (typeof altCandidate === 'number') active = altCandidate >= this.SAT_DECAY_ALT_KM;
+      if (this.useDomLabels && this.labelRenderer) {
+        const el = document.createElement('div'); const isDtc = name.includes('[DTC]'); const borderColor = isDtc ? this.SAT_DTC_COLOR : (active ? this.SAT_ACTIVE_COLOR : this.SAT_DECAY_COLOR); el.innerHTML=`<span class="sat-text">${name}</span>`; el.style.cssText=`opacity:0;z-index:25;position:relative;display:inline-flex;align-items:center;gap:14px;padding:6px 16px 6px 14px;font:600 12px 'Inter','Segoe UI','Roboto',system-ui,sans-serif;color:#fff;border-radius:32px;background:rgba(18,22,30,0.78);border:1px solid ${borderColor};box-shadow:0 0 8px 2px ${borderColor}40,0 4px 14px -6px rgba(0,0,0,0.65);backdrop-filter:blur(10px) saturate(160%);-webkit-backdrop-filter:blur(10px) saturate(160%);pointer-events:none;`; const dot=document.createElement('span'); dot.style.cssText=`flex:0 0 auto;margin-left:2px;width:9px;height:9px;border-radius:50%;background:${borderColor};box-shadow:0 0 6px 1px ${borderColor}AA;display:inline-block;`; el.insertBefore(dot, el.firstChild);
+        const obj = new CSS2DObject(el); obj.position.copy(position.clone().add(new THREE.Vector3(0,0.0008,0))); (obj as any).userData={satIndex:index,satellitePosition:position.clone(),dom:true,fixedScale:true};
+        this.scene.add(obj); this.satLabels.push(obj); this.labelFadeStates.set(obj.id,{state:'fadingIn',startTime:performance.now()});
+      } else {
+        const texture = this.createStatusLabelTexture(name, active); const spriteMaterial = new THREE.SpriteMaterial({ map: texture, transparent: true, alphaTest: 0.01, depthTest: false, depthWrite: false, sizeAttenuation: false });
+        const sprite = new THREE.Sprite(spriteMaterial); sprite.scale.set(scaleDyn.x, scaleDyn.y, 1); sprite.position.copy(position.clone().add(new THREE.Vector3(0,0.0008,0))); sprite.userData['satIndex']=index; sprite.userData['satellitePosition']=position.clone(); sprite.material.opacity=0.0; this.scene.add(sprite); this.satLabels.push(sprite); this.labelFadeStates.set(sprite.id,{state:'fadingIn',startTime:performance.now()});
+      }
+    } else {
+      if (!(existing as any).element) existing.scale.set(scaleDyn.x, scaleDyn.y, 1); (existing as any).userData['satellitePosition']=position.clone(); const newOffset=new THREE.Vector3(0,0.0008,0); existing.position.copy(position.clone().add(newOffset)); const st=this.labelFadeStates.get(existing.id); if (st && st.state==='fadingOut') this.labelFadeStates.set(existing.id,{state:'fadingIn',startTime:performance.now()});
     }
   }
   private updateExistingLabelsScale() {
@@ -1296,39 +1703,90 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
 
     this.satLabels.forEach((label, index) => {
       // Actualizar escala
-      if (label.userData && label.userData['fixedScale']) {
+      if ((label as any).userData && (label as any).userData['fixedScale']) {
         // Mantener escala constante (solo actualizar posición)
       } else {
-        label.scale.set(scaleFactor.x, scaleFactor.y, 1);
+        if (!(label as any).element) label.scale.set(scaleFactor.x, scaleFactor.y, 1); // sólo sprites
       }
 
       // 🎯 NUEVO: También actualizar posición para mantener proximidad
-      if (label.userData && label.userData['satellitePosition']) {
+      if ((label as any).userData && (label as any).userData['satellitePosition']) {
         // Refrescar posición del satélite (especialmente para la etiqueta fija seleccionada)
-        let satellitePosition = label.userData['satellitePosition'] as THREE.Vector3;
-        const satIdxForUpdate = label.userData['satIndex'];
+        let satellitePosition = (label as any).userData['satellitePosition'] as THREE.Vector3;
+        const satIdxForUpdate = (label as any).userData['satIndex'];
         if (typeof satIdxForUpdate === 'number' && this.satsMesh) {
           const m = new THREE.Matrix4();
           const p = new THREE.Vector3();
           this.satsMesh.getMatrixAt(satIdxForUpdate, m); p.setFromMatrixPosition(m);
           satellitePosition = p; // actualizar
-          label.userData['satellitePosition'] = p.clone();
+          (label as any).userData['satellitePosition'] = p.clone();
         }
-        const satIndexForOffset = label.userData['satIndex'] || index;
+        const satIndexForOffset = (label as any).userData['satIndex'] || index;
         const newOffset = this.calculateSmartLabelOffset(satellitePosition, satIndexForOffset, cameraDistance);
         label.position.copy(satellitePosition.clone().add(newOffset));
       }
     });
   }
   private clearSatelliteLabels() {
+    // En vez de destruir inmediatamente, marcamos fadeOut si no están ya
+    const now = performance.now();
     this.satLabels.forEach(label => {
-      this.scene.remove(label);
-      if (label.material.map) {
-        label.material.map.dispose();
+      const state = this.labelFadeStates.get(label.id);
+      if (!state || state.state !== 'fadingOut') {
+        this.labelFadeStates.set(label.id, { state: 'fadingOut', startTime: now });
       }
-      label.material.dispose();
     });
-    this.satLabels = [];
+  }
+
+  // Destruir realmente etiquetas cuyo fadeOut terminó
+  private finalizeLabelRemovals() {
+    const survivors: THREE.Sprite[] = [];
+    this.satLabels.forEach(label => {
+      const st = this.labelFadeStates.get(label.id);
+      if (st && st.state === 'fadingOut') {
+        const t = performance.now() - st.startTime;
+        if (t >= this.LABEL_FADE_OUT_MS) {
+          this.scene.remove(label as any);
+          // DOM label
+          if ((label as any).element && (label as any).element.parentElement) {
+            (label as any).element.parentElement.removeChild((label as any).element);
+          }
+          if ((label as any).material) {
+            const mat: any = (label as any).material;
+            if (mat.map) mat.map.dispose();
+            mat.dispose?.();
+          }
+          this.labelFadeStates.delete(label.id);
+          return; // skip push
+        }
+      }
+      survivors.push(label);
+    });
+    this.satLabels = survivors;
+  }
+
+  private updateLabelFades() {
+    if (this.satLabels.length === 0 && this.labelFadeStates.size === 0) return;
+    const now = performance.now();
+    this.satLabels.forEach(label => {
+      const st = this.labelFadeStates.get(label.id);
+      if (!st) return;
+      if (st.state === 'fadingIn') {
+        const t = (now - st.startTime) / this.LABEL_FADE_IN_MS;
+        const k = Math.min(1, t);
+  if ((label as any).element) (label as any).element.style.opacity = k.toString(); else (label as any).material.opacity = k;
+        if (t >= 1) {
+          this.labelFadeStates.set(label.id, { state: 'visible', startTime: now });
+        }
+      } else if (st.state === 'fadingOut') {
+        const t = (now - st.startTime) / this.LABEL_FADE_OUT_MS;
+        const k = Math.min(1, t);
+  if ((label as any).element) (label as any).element.style.opacity = (1-k).toString(); else (label as any).material.opacity = 1 - k;
+      } else if (st.state === 'visible') {
+  if ((label as any).element) (label as any).element.style.opacity = '1'; else (label as any).material.opacity = 1.0;
+      }
+    });
+    this.finalizeLabelRemovals();
   }
   private extractSatelliteName(sat: any, index: number): string {
     // Debug solo para los primeros 3 satélites para no saturar
@@ -1365,33 +1823,27 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     return `SAT-${index + 1}`;
   }
   private calculateLabelScale(cameraDistance: number): { x: number; y: number } {
-    // Escala base para etiquetas tipo cuadro como en la imagen
-    const baseScale = { x: 0.3, y: 0.08 };
+    // Config. unificada de escalado (ajusta aquí rangos y factores)
+    // Si quieres la misma lógica para global y satélite, modifica SOLO esta tabla.
+    const BASE_SCALE = { x: 0.3, y: 0.08 };
+    const SCALE_TABLE: { max: number; factor: number }[] = [
+      { max: 0.12, factor: 0.75 },
+      { max: 0.15, factor: 0.80 },
+      { max: 0.20, factor: 1.00 },
+      { max: 0.30, factor: 1.30 },
+      { max: Infinity, factor: 1.60 }
+    ];
 
-    // Factor de escala adaptado al zoom
-    let scaleFactor = 1;
+    let scaleFactor = 1.0;
+    for (const entry of SCALE_TABLE) { if (cameraDistance <= entry.max) { scaleFactor = entry.factor; break; } }
 
-    if (cameraDistance <= 0.12) {
-      // Zoom máximo - etiquetas pequeñas pero legibles
-      scaleFactor = 0.75;
-    } else if (cameraDistance <= 0.15) {
-      // Zoom alto - etiquetas normales
-      scaleFactor = 0.8;
-    } else if (cameraDistance <= 0.2) {
-      // Zoom medio - etiquetas estándar
-      scaleFactor = 1.0;
-    } else if (cameraDistance <= 0.3) {
-      // Zoom bajo - etiquetas más grandes
-      scaleFactor = 1.3;
-    } else {
-      // Sin zoom - etiquetas grandes
-      scaleFactor = 1.6;
+    // Ajuste específico para vista satélite (reduce tamaño en distancias grandes para evitar apariencia "grande")
+    if (this.viewMode === 'satellite') {
+      if (cameraDistance > 0.30) scaleFactor *= 0.78; // antes 1.6 => ahora ~1.25
+      else if (cameraDistance > 0.20) scaleFactor *= 0.85; // antes 1.3 => ahora ~1.105
     }
 
-    return {
-      x: baseScale.x * scaleFactor,
-      y: baseScale.y * scaleFactor
-    };
+    return { x: BASE_SCALE.x * scaleFactor, y: BASE_SCALE.y * scaleFactor };
   }
   private calculateSatelliteScale(cameraDistance: number): number {
     // Escala base para los satélites
@@ -2151,12 +2603,13 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
         }
       }
     });
-    // Actualizar etiquetas y escala de satélites si estamos en vista detallada
-    if (this.isDetailedView) {
-      if (this.frameId % 15 === 0) { // Cada 15 frames para regeneración completa de etiquetas
+    // Actualizar etiquetas (vista detallada o vista satélite)
+    if (this.isDetailedView || this.viewMode === 'satellite') {
+      if (this.frameId % 15 === 0) {
         this.updateSatelliteLabels();
-      } else if (this.frameId % 2 === 0) { // Cada 2 frames para actualizar posiciones y escalas (más frecuente)
-        this.updateExistingLabelsScale();
+      } else if (this.frameId % 2 === 0) {
+        if (this.cfg.showLabels) this.updateExistingLabelsScale();
+        else if (this.selectedSatelliteIndex != null) this.ensureSelectedLabel(this.selectedSatelliteIndex);
       }
     }
 
@@ -2182,7 +2635,16 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       this.earthRoot.rotation.y += this.EARTH_ROT_RATE * dtSec; // Y rota este globo
     }
 
-    this.renderer.render(this.scene, this.camera);
+  // Actualizar animación de cámara (transición a vista satélite)
+  this.updateCameraAnimation();
+  // Tracking continuo si en modo satélite
+  this.updateSatelliteTracking();
+
+  // Actualizar fades de etiquetas
+  this.updateLabelFades();
+
+  this.renderer.render(this.scene, this.camera);
+  if (this.labelRenderer) this.labelRenderer.render(this.scene, this.camera);
   };
   private updateSatellitePositions(satellites: { index: number; eci_km: { x: number; y: number; z: number }; gmst: number; visible: boolean; lon?: number; lat?: number; height?: number }[]) {
     if (!this.satsMesh) return;
@@ -2308,6 +2770,11 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   //region Configuration panel rgba(255, 191, 0, 1))]
 
   public toggleConfigPanel() { this.showConfigPanel = !this.showConfigPanel; }
+  // Toggle SAT Finder minimize
+  public toggleSearchPanelMinimized(force?: boolean) {
+    if (typeof force === 'boolean') this.searchPanelMinimized = force; else this.searchPanelMinimized = !this.searchPanelMinimized;
+  this.scheduleMiniHeaderAdjust();
+  }
   public applyConfig() {
     // Grid
     if (this.earthGrid) this.earthGrid.visible = this.cfg.showGrid;
@@ -2325,15 +2792,23 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.updateSatelliteBaseColor();
     // Color órbita / indicadores
     this.updateActiveOrbitColors();
-    // Etiquetas
-    if (!this.cfg.showLabels) {
-      // Limpiar todas menos la seleccionada (si hay)
-      const selectedIdx = this.selectedSatelliteIndex;
-      this.clearSatelliteLabels();
-      if (selectedIdx != null) this.ensureSelectedLabel(selectedIdx);
+    // Etiquetas: lógica contextual
+    if (this.viewMode === 'satellite') {
+      if (this.cfg.showLabels) {
+        this.updateSatelliteLabels();
+      } else {
+        const selectedIdx = this.selectedSatelliteIndex;
+        this.clearSatelliteLabels();
+        if (selectedIdx != null) this.ensureSelectedLabel(selectedIdx);
+      }
     } else {
-      // Forzar regeneración inmediata
-      this.updateSatelliteLabels();
+      if (!this.cfg.showLabels) {
+        const selectedIdx = this.selectedSatelliteIndex;
+        this.clearSatelliteLabels();
+        if (selectedIdx != null) this.ensureSelectedLabel(selectedIdx);
+      } else {
+        this.updateSatelliteLabels();
+      }
     }
   }
   private updateSatelliteBaseColor() {

@@ -10,18 +10,30 @@
 
 
 <!-- Panel flotante de búsqueda / constelaciones (rediseño moderno) -->
-<div class="search-panel glass-elevated">
-  <div class="finder-header">
-    <div class="finder-title">SAT Finder</div>
-    <div class="finder-subtitle">Rastrea y selecciona satélites</div>
+<div class="search-panel glass-elevated" [class.minimized]="searchPanelMinimized">
+  <button class="panel-minimize-btn" (click)="toggleSearchPanelMinimized(true)" aria-label="Minimizar" title="Minimizar">–</button>
+  <div class="finder-minimized" (click)="toggleSearchPanelMinimized(false)">
+    <div class="mini-title">SAT Finder</div>
+    <div class="mini-desc">Track satellites across constellations</div>
+    <div class="mini-expand">Show more</div>
   </div>
+  <div class="finder-body">
+    <div class="finder-header">
+      <div class="finder-title">SAT Finder</div>
+      <div class="finder-subtitle">Rastrea y selecciona satélites</div>
+    </div>
   <div class="finder-field">
     <label for="constellationSel">Constelación</label>
-    <div class="select-wrapper">
-      <select id="constellationSel" [(ngModel)]="selectedConstellation" (click)="onConstellationSelectClick()" (change)="changeConstellation(selectedConstellation)">
-        <option *ngFor="let c of tle.getAvailableConstellations()" [value]="c">{{ tle.getConstellationLabel(c) }}</option>
-      </select>
-      <span class="chevron">▾</span>
+    <div class="constellation-dropdown" [class.open]="showConstellationDropdown">
+      <button type="button" class="constellation-trigger" (click)="toggleConstellationDropdown()">
+        <span class="trigger-text">{{ tle.getConstellationLabel(selectedConstellation) }}</span>
+        <span class="trigger-chevron">▾</span>
+      </button>
+      <div class="constellation-menu" *ngIf="showConstellationDropdown" (scroll)="onConstellationScroll($event)">
+        <div class="constellation-item" *ngFor="let c of tle.getAvailableConstellations()" [class.active]="c===selectedConstellation" (click)="onPickConstellation(c)">
+          <span class="constellation-label">{{ tle.getConstellationLabel(c) }}</span>
+        </div>
+      </div>
     </div>
   </div>
   <div class="finder-field">
@@ -41,81 +53,100 @@
     <span class="divider">/</span>
     <span>{{tle.getAllSatrecs().length}} satélites</span>
   </div>
+  <div class="view-mode-buttons">
+    <button class="view-btn" [class.active]="viewMode==='global'" (click)="activateGlobalView()" title="Vista global">🌐</button>
+    <button class="view-btn" [disabled]="!hasSelectedSatellite" [class.disabled]="!hasSelectedSatellite" [class.active]="viewMode==='satellite'" (click)="activateSatelliteView()" title="Vista satélite (requiere selección)">🛰️</button>
+  </div>
+  </div>
 </div>
 
 <!-- Botón de configuración -->
-<div class="config-toggle" (click)="toggleConfigPanel()" title="Configuración">
-  ⚙️
+ <div class="Config-dock">
+  <button class="config-toggle" (click)="toggleConfigPanel()" title="Configuración">⚙️</button>
+</div>
+<!-- Tray configuración horizontal -->
+<div class="config-tray" *ngIf="showConfigPanel">
+  <div class="tray-header">
+    <span class="tray-title">Configuración</span>
+    <button class="close-tray" (click)="toggleConfigPanel()" aria-label="Cerrar">✕</button>
+  </div>
+  <div class="tray-columns">
+    <!-- Columna toggles básicos -->
+    <div class="tray-col">
+      <div class="col-title">Capas</div>
+      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showGrid" (change)="applyConfig()" /> <span>Grid terrestre</span></label>
+      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showAxes" (change)="applyConfig()" /> <span>Ejes XYZ</span></label>
+      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showLabels" (change)="applyConfig()" /> <span>Etiquetas extra</span></label>
+    </div>
+    <!-- Columna colores -->
+    <div class="tray-col">
+      <div class="col-title">Colores</div>
+      <div class="mini-label-inline">Satélites</div>
+      <div class="color-row tight">
+        <div *ngFor="let c of satelliteColorPalette" class="color-swatch" [ngStyle]="{background:c}" [class.selected]="c===cfg.satColor" (click)="setSatelliteColor(c)"></div>
+        <div class="color-swatch custom" [ngStyle]="{background:customSatColor}" title="Personalizado">
+          <input type="color" [(ngModel)]="customSatColor" (change)="setCustomSatelliteColor()" />
+        </div>
+      </div>
+      <div class="mini-label-inline" style="margin-top:10px;">Órbita</div>
+      <div class="color-row tight">
+        <div *ngFor="let c of orbitColorPalette" class="color-swatch" [ngStyle]="{background:c}" [class.selected]="c===cfg.orbitColor" (click)="setOrbitColor(c)"></div>
+        <div class="color-swatch custom" [ngStyle]="{background:customOrbitColor}" title="Personalizado">
+          <input type="color" [(ngModel)]="customOrbitColor" (change)="setCustomOrbitColor()" />
+        </div>
+      </div>
+    </div>
+    <!-- Columna Tierra / Render -->
+    <div class="tray-col wide">
+      <div class="col-title">Tierra / Render</div>
+      <div class="earth-mode-row">
+        <label class="mini-label-inline">Modo</label>
+        <select #earthModeSel (change)="onEarthModeChange(earthModeSel.value)" [value]="earthMode">
+          <option value="classic">Clásico</option>
+          <option value="glb">GLB</option>
+        </select>
+      </div>
+      <div *ngIf="earthMode==='glb'" class="pbr-block">
+        <label class="chk-line small"><input type="checkbox" [checked]="glbPbrMode" (change)="glbPbrMode=!glbPbrMode; setEarthMode('glb')" /> <span>PBR (HDR)</span></label>
+        <div *ngIf="!glbPbrMode" class="hint-line">Plano: sin luces / HDR</div>
+        <div *ngIf="glbPbrMode" class="pbr-sliders">
+          <label>HDR Int <input type="range" min="0" max="3" step="0.05" [(ngModel)]="pbrEnvMapIntensity" (change)="onPbrParamsChange()" /> <span>{{pbrEnvMapIntensity | number:'1.2-2'}}</span></label>
+          <label>Rough Δ <input type="range" min="-0.8" max="0.8" step="0.01" [(ngModel)]="pbrRoughnessDelta" (change)="onPbrParamsChange()" /> <span>{{pbrRoughnessDelta | number:'1.2-2'}}</span></label>
+          <label>Metal Δ <input type="range" min="-0.5" max="0.5" step="0.01" [(ngModel)]="pbrMetalnessDelta" (change)="onPbrParamsChange()" /> <span>{{pbrMetalnessDelta | number:'1.2-2'}}</span></label>
+          <div class="pbr-actions">
+            <button (click)="resetPbrAdjustments()" class="mini-btn">Reset PBR</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<!-- Panel configuración -->
-<div class="config-panel" *ngIf="showConfigPanel">
-  <h3>Configuración</h3>
-  <div class="config-options">
-    <div class="config-option">
-      <input type="checkbox" id="cfgGrid" [(ngModel)]="cfg.showGrid" (change)="applyConfig()" />
-      <label for="cfgGrid">Mostrar grid terrestre</label>
-    </div>
-    <div class="config-option">
-      <input type="checkbox" id="cfgAxes" [(ngModel)]="cfg.showAxes" (change)="applyConfig()" />
-      <label for="cfgAxes">Mostrar ejes XYZ</label>
-    </div>
-    <div class="config-option">
-      <input type="checkbox" id="cfgLabels" [(ngModel)]="cfg.showLabels" (change)="applyConfig()" />
-      <label for="cfgLabels">Mostrar etiquetas (excepto siempre la del seleccionado)</label>
-    </div>
-    <div class="config-option" style="flex-direction:column; align-items:flex-start;">
-      <label style="cursor:default;">Color satélites</label>
-      <div class="color-row">
-        <div *ngFor="let c of satelliteColorPalette" class="color-swatch" [ngStyle]="{background:c}" [class.selected]="c===cfg.satColor" (click)="setSatelliteColor(c)" title="{{c}}"></div>
-        <div class="color-swatch" [ngStyle]="{background:customSatColor, border:'2px dashed rgba(255,255,255,0.5)'}" title="Personalizado">
-          <input type="color" [(ngModel)]="customSatColor" (change)="setCustomSatelliteColor()" style="opacity:0; width:100%; height:100%; cursor:pointer;" />
-        </div>
-      </div>
-    </div>
-    <div class="config-option" style="flex-direction:column; align-items:flex-start;">
-      <label style="cursor:default;">Color órbita</label>
-      <div class="color-row">
-        <div *ngFor="let c of orbitColorPalette" class="color-swatch" [ngStyle]="{background:c}" [class.selected]="c===cfg.orbitColor" (click)="setOrbitColor(c)" title="{{c}}"></div>
-        <div class="color-swatch" [ngStyle]="{background:customOrbitColor, border:'2px dashed rgba(255,255,255,0.5)'}" title="Personalizado">
-          <input type="color" [(ngModel)]="customOrbitColor" (change)="setCustomOrbitColor()" style="opacity:0; width:100%; height:100%; cursor:pointer;" />
-        </div>
-      </div>
-    </div>
-    <hr style="width:100%; border:none; border-top:1px solid rgba(255,255,255,0.1); margin:4px 0;" />
-    <h4 style="margin:4px 0 4px; font-size:0.8rem; opacity:0.8;">Tierra / Render</h4>
-    <div class="config-option" style="flex-direction:column; align-items:flex-start;">
-    <label>Modo Tierra</label>
-  <select #earthModeSel (change)="onEarthModeChange(earthModeSel.value)" [value]="earthMode" style="width:100%;">
-        <option value="classic">Clásico (Textura)</option>
-        <option value="glb">GLB</option>
-      </select>
-    </div>
-    <div class="config-option" *ngIf="earthMode==='glb'" style="flex-direction:column; align-items:flex-start; gap:4px;">
-  <label><input type="checkbox" [checked]="glbPbrMode" (change)="glbPbrMode=!glbPbrMode; setEarthMode('glb')" /> PBR (HDR + materiales físicos)</label>
-  <!-- Auto-rotar y slider de velocidad eliminados: rotación siempre real -->
-  <!-- Exposición fija (2.0) en modo GLB PBR: control eliminado -->
-      <div *ngIf="!glbPbrMode" style="font-size:0.6rem; opacity:0.7;">Modo plano: ignora luces / HDR</div>
-  <!-- Controles de brillo/contraste eliminados -->
-      <div *ngIf="glbPbrMode" class="config-option" style="flex-direction:column; align-items:flex-start; width:100%; margin-top:6px;">
-        <label style="cursor:default; font-size:0.7rem; opacity:0.9;">PBR Avanzado</label>
-        <label style="display:flex; align-items:center; width:100%; gap:6px;">HDR Int
-          <input type="range" min="0" max="3" step="0.05" [(ngModel)]="pbrEnvMapIntensity" (change)="onPbrParamsChange()" style="flex:1;" />
-          <span style="font-size:0.65rem; width:46px; text-align:right;">{{pbrEnvMapIntensity | number:'1.2-2'}}</span>
-        </label>
-        <label style="display:flex; align-items:center; width:100%; gap:6px;">Rough Δ
-          <input type="range" min="-0.8" max="0.8" step="0.01" [(ngModel)]="pbrRoughnessDelta" (change)="onPbrParamsChange()" style="flex:1;" />
-          <span style="font-size:0.65rem; width:46px; text-align:right;">{{pbrRoughnessDelta | number:'1.2-2'}}</span>
-        </label>
-        <label style="display:flex; align-items:center; width:100%; gap:6px;">Metal Δ
-          <input type="range" min="-0.5" max="0.5" step="0.01" [(ngModel)]="pbrMetalnessDelta" (change)="onPbrParamsChange()" style="flex:1;" />
-          <span style="font-size:0.65rem; width:46px; text-align:right;">{{pbrMetalnessDelta | number:'1.2-2'}}</span>
-        </label>
-  <!-- Rim light eliminado completamente -->
-        <div style="display:flex; gap:6px; width:100%;">
-          <button (click)="resetPbrAdjustments()" style="flex:1; padding:2px 4px; font-size:0.65rem;">Reset PBR</button>
-        </div>
-      </div>
+<!-- Módulo detalle satélite seleccionado -->
+<div *ngIf="hasSelectedSatellite">
+  <!-- Mini header colapsado -->
+  <div class="sat-mini-header" *ngIf="satelliteInfoPanel.collapsed" (click)="toggleSatelliteInfoPanel()" [ngStyle]="{top: satelliteInfoPanel.miniTopPx + 'px'}">
+    <span class="mini-icon">ℹ️</span>
+    <span class="mini-title">{{ satelliteInfoPanel.currentName }} <span class="mini-id" *ngIf="satelliteInfoPanel.currentNorad">#{{satelliteInfoPanel.currentNorad}}</span></span>
+    <span class="mini-expand">›</span>
+    <button class="mini-close" (click)="onCloseSatellite($event)" aria-label="Cerrar">✕</button>
+  </div>
+  <!-- Panel expandido -->
+  <div class="sat-detail-panel" [class.collapsed]="satelliteInfoPanel.collapsed" #satPanel>
+    <button class="sat-panel-close-btn" (click)="onCloseSatellite($event)" title="Cerrar" aria-label="Cerrar">✕</button>
+    <button class="sat-panel-min-btn" (click)="onClickSatellitePanelMin($event)" title="Minimizar" aria-label="Minimizar">–</button>
+    <div class="sat-detail-inner" *ngIf="!satelliteInfoPanel.collapsed">
+      <aside class="sat-tabs">
+        <button class="sat-tab" *ngFor="let t of satelliteInfoPanel.tabs" [class.active]="satelliteInfoPanel.activeTab===t.id" (click)="setSatelliteInfoTab(t.id)">{{t.label}}</button>
+      </aside>
+      <section class="sat-tab-content">
+        <div *ngIf="satelliteInfoPanel.activeTab==='summary'" class="tab-view fade-in"><app-sat-summary [satIndex]="selectedSatelliteIndex"></app-sat-summary></div>
+        <div *ngIf="satelliteInfoPanel.activeTab==='info'" class="tab-view fade-in"><app-sat-info [satIndex]="selectedSatelliteIndex"></app-sat-info></div>
+        <div *ngIf="satelliteInfoPanel.activeTab==='tle'" class="tab-view fade-in"><app-sat-tle [satIndex]="selectedSatelliteIndex"></app-sat-tle></div>
+        <div *ngIf="satelliteInfoPanel.activeTab==='charts'" class="tab-view fade-in"><app-sat-charts [satIndex]="selectedSatelliteIndex"></app-sat-charts></div>
+        <div *ngIf="satelliteInfoPanel.activeTab==='position'" class="tab-view fade-in"><app-sat-position [satIndex]="selectedSatelliteIndex"></app-sat-position></div>
+        <div *ngIf="satelliteInfoPanel.activeTab==='hardware'" class="tab-view fade-in"><app-sat-hardware [satIndex]="selectedSatelliteIndex"></app-sat-hardware></div>
+      </section>
     </div>
   </div>
 </div>
@@ -131,7 +162,7 @@
     <a href="#" class="nav-item">Insights</a>
     <a href="#" class="nav-item">Más</a>
   </nav>
-  <div class="banner-extra">Beta • Tiempo real • Demo</div>
+  <div class="banner-extra">Alpha Version • Real Time • Demo</div>
 </div>
 
 <!-- Dock vertical derecho -->
@@ -139,7 +170,6 @@
   <button class="dock-btn" [class.active]="openModule==='geo'" (click)="toggleModule('geo')" title="Localización UE">📍</button>
   <button class="dock-btn" [class.active]="openModule==='link'" (click)="toggleModule('link')" title="Parámetros enlace">📡</button>
   <button class="dock-btn" [class.active]="openModule==='metrics'" (click)="toggleModule('metrics')" title="Métricas">📊</button>
-  <button class="dock-btn" [class.active]="openModule==='config'" (click)="toggleModule('config')" title="Configuración">⚙️</button>
 </div>
 
 <!-- Panel flotante módulo GEO -->

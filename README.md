@@ -32,8 +32,9 @@ Perfect for educational demonstrations, network planning analysis, and understan
 
 ## 🎥 Demo & Screenshots
 
-<!-- TODO: Add live demo link when deployed -->
-**🚀 [Live Demo] (https://www.youtube.com/watch?v=K4KwTB3aXD0))**
+### 4-Minute Complete Demo
+[![Watch the Demo](https://img.youtube.com/vi/K4KwTB3aXD0/maxresdefault.jpg)](https://www.youtube.com/watch?v=K4KwTB3aXD0)
+*👆 Click to watch the full 4-minute walkthrough on YouTube*
 
 ### Main Interface <img width="1918" height="1072" alt="image" src="https://github.com/user-attachments/assets/428c1600-dd3d-4b71-beb6-85b15ce012d4" />
 *Real-time 3D visualization with adaptive satellite labels*
@@ -466,4 +467,5 @@ copies or substantial portions of the Software.
 ### 🔗 Useful Links
 - [Live Demo](https://your-deployment-url.com) • [Documentation](docs/) • [API Reference](docs/api.md)
 - [Issues](https://github.com/Luisfdez-Eng/Simulator-for-Handover-/issues) • [Discussions](https://github.com/Luisfdez-Eng/Simulator-for-Handover-/discussions) • [Releases](https://github.com/Luisfdez-Eng/Simulator-for-Handover-/releases)
+
 

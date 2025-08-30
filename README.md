@@ -1,4 +1,4 @@
-# 🛰️ Starlink Constellation Visualizer
+# 🛰️ 3D Constellation Tracker V1.0.0
 ### Real-time 3D satellite tracking and handover simulation with ML-assisted selection
 
 [![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/Luisfdez-Eng/Simulator-for-Handover-/releases)
@@ -33,20 +33,23 @@ Perfect for educational demonstrations, network planning analysis, and understan
 ## 🎥 Demo & Screenshots
 
 <!-- TODO: Add live demo link when deployed -->
-**🚀 [Live Demo](https://your-deployment-url.com)** | **📱 [Mobile Demo](https://your-deployment-url.com)**
+**🚀 [Live Demo] (https://www.youtube.com/watch?v=K4KwTB3aXD0))**
 
-![Main Interface](docs/screenshots/main-interface.png)
+### Main Interface <img width="1918" height="1072" alt="image" src="https://github.com/user-attachments/assets/428c1600-dd3d-4b71-beb6-85b15ce012d4" />
 *Real-time 3D visualization with adaptive satellite labels*
 
-![Satellite Information Panel](docs/screenshots/satellite-panel.png)
+### Satellite Information Panel <img width="1911" height="1075" alt="image" src="https://github.com/user-attachments/assets/b63504f9-8749-4e87-a0d1-ca4443465983" />
 *Detailed satellite information extracted from TLE data*
 
-![Constellation Overview](docs/screenshots/constellation-view.png)
-*Complete Starlink constellation with intelligent label scaling*
+### Constellation Overview <img width="1915" height="1072" alt="image" src="https://github.com/user-attachments/assets/67bc2758-93b4-40c1-9756-7c2f6a5297c3" />
+*Other Constellation selection with adaptative tracking information*
 
-<!-- TODO: Add demo GIF showing handover simulation -->
-![Handover Simulation](docs/gifs/handover-demo.gif)
-*ML-assisted satellite handover simulation in action*
+### UE Location Management <img width="1912" height="1079" alt="image" src="https://github.com/user-attachments/assets/7c5943af-2bb1-47fb-bd4c-530bc7d65890" />
+*Place your UE where you want*
+
+### Easy Selection of any Satellite <img width="1906" height="1067" alt="image" src="https://github.com/user-attachments/assets/d68c7ea1-29db-43b8-85de-19fb5eb4ddbc" />
+*Search Through a big list of available satellites*
+
 
 ## 🚀 Installation
 
@@ -463,3 +466,4 @@ copies or substantial portions of the Software.
 ### 🔗 Useful Links
 - [Live Demo](https://your-deployment-url.com) • [Documentation](docs/) • [API Reference](docs/api.md)
 - [Issues](https://github.com/Luisfdez-Eng/Simulator-for-Handover-/issues) • [Discussions](https://github.com/Luisfdez-Eng/Simulator-for-Handover-/discussions) • [Releases](https://github.com/Luisfdez-Eng/Simulator-for-Handover-/releases)
+

@@ -1207,10 +1207,27 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   private updateSatelliteTracking() {
     if (this.viewMode !== 'satellite' || this.cameraAnim?.active) return; // no track durante animación
     if (this.selectedSatelliteIndex == null || !this.satsMesh) return;
+    
+    // 🎯 PROTECCIÓN: Solo actualizar cada pocos frames para reducir lag
+    if (this.frameId % 2 !== 0) return; // Solo cada 2 frames
+    
     const temp = new THREE.Matrix4();
     const satPos = new THREE.Vector3();
-    this.satsMesh.getMatrixAt(this.selectedSatelliteIndex, temp); satPos.setFromMatrixPosition(temp);
-    if (!isFinite(satPos.x) || !isFinite(satPos.y) || !isFinite(satPos.z)) return;
+    
+    try {
+      this.satsMesh.getMatrixAt(this.selectedSatelliteIndex, temp); 
+      satPos.setFromMatrixPosition(temp);
+      
+      // 🎯 PROTECCIÓN: Validar posición del satélite
+      if (!isFinite(satPos.x) || !isFinite(satPos.y) || !isFinite(satPos.z)) return;
+      
+      const satRadius = satPos.length();
+      if (satRadius < 0.1 || satRadius > 1.5) return; // Rango expandido pero seguro
+      
+    } catch (error) {
+      console.warn('[TRACKING] Error getting satellite position:', error);
+      return;
+    }
 
     // Actualizar target suavemente (LERP) para evitar jitter pero permitiendo ligera inercia
     const smoothedTarget = this.controls.target.clone().lerp(satPos, 0.40);
@@ -1570,14 +1587,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     const position = new THREE.Vector3();
     const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
 
-  // Radio de visibilidad basado en el zoom (igual lógica para global; en satélite reducimos un poco)
+  // Radio de visibilidad basado en el zoom con menos etiquetas
     let visibilityRadius: number;
     let maxLabels: number;
   const radiusShrink = (this.viewMode === 'satellite') ? 0.85 : 1.0;
-  if (cameraDistance <= 0.12) { visibilityRadius = 0.08 * radiusShrink; maxLabels = 50; }
-  else if (cameraDistance <= 0.15) { visibilityRadius = 0.12 * radiusShrink; maxLabels = 75; }
-  else if (cameraDistance <= 0.2) { visibilityRadius = 0.18 * radiusShrink; maxLabels = 100; }
-  else { visibilityRadius = 0.25 * radiusShrink; maxLabels = 150; }
+  if (cameraDistance <= 0.12) { visibilityRadius = 0.08 * radiusShrink; maxLabels = 20; } // MUY POCOS
+  else if (cameraDistance <= 0.15) { visibilityRadius = 0.12 * radiusShrink; maxLabels = 25; }
+  else if (cameraDistance <= 0.2) { visibilityRadius = 0.18 * radiusShrink; maxLabels = 30; }
+  else { visibilityRadius = 0.25 * radiusShrink; maxLabels = 30; } // Máximo 30 etiquetas
 
     let labelsCreated = 0;
     const candidateLabels: { sat: any, position: THREE.Vector3, index: number, distance: number }[] = [];
@@ -1662,10 +1679,32 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     if (!this.satsMesh) return;
     const sats = this.tle.getAllSatrecs();
     if (index < 0 || index >= sats.length) return;
+    
+    // 🎯 PROTECCIÓN: Evitar llamadas demasiado frecuentes
+    if (this.frameId % 3 !== 0) return; // Solo cada 3 frames
+    
     const tempMatrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
-    this.satsMesh.getMatrixAt(index, tempMatrix);
-    position.setFromMatrixPosition(tempMatrix);
+    
+    try {
+      this.satsMesh.getMatrixAt(index, tempMatrix);
+      position.setFromMatrixPosition(tempMatrix);
+      
+      // 🎯 PROTECCIÓN: Validar posición válida
+      if (!isFinite(position.x) || !isFinite(position.y) || !isFinite(position.z)) {
+        return;
+      }
+      
+      const posRadius = position.length();
+      if (posRadius < 0.1 || posRadius > 1.5) { // Rango válido expandido
+        return;
+      }
+      
+    } catch (error) {
+      console.warn('[ENSURE-LABEL] Error getting satellite position:', error);
+      return;
+    }
+    
     const cameraDistance = this.camera.position.distanceTo(new THREE.Vector3(0, 0, 0));
   // Si demasiado lejos, eliminar etiqueta si existe
   const hideThreshold = (this.viewMode === 'satellite') ? this.SATELLITE_LABEL_HIDE_RADIUS : 0.30; // umbral coherente con radios finales
@@ -1823,15 +1862,14 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     return `SAT-${index + 1}`;
   }
   private calculateLabelScale(cameraDistance: number): { x: number; y: number } {
-    // Config. unificada de escalado (ajusta aquí rangos y factores)
-    // Si quieres la misma lógica para global y satélite, modifica SOLO esta tabla.
-    const BASE_SCALE = { x: 0.3, y: 0.08 };
+    // ESCALAS MUY REDUCIDAS - cambios extremos para que se noten
+    const BASE_SCALE = { x: 0.08, y: 0.025 }; // MUCHO más pequeño
     const SCALE_TABLE: { max: number; factor: number }[] = [
-      { max: 0.12, factor: 0.75 },
-      { max: 0.15, factor: 0.80 },
-      { max: 0.20, factor: 1.00 },
-      { max: 0.30, factor: 1.30 },
-      { max: Infinity, factor: 1.60 }
+      { max: 0.12, factor: 0.3 }, // Muy pequeño en zoom cercano
+      { max: 0.15, factor: 0.4 },
+      { max: 0.20, factor: 0.5 },
+      { max: 0.30, factor: 0.6 },
+      { max: Infinity, factor: 0.8 } // Incluso en zoom lejano, pequeño
     ];
 
     let scaleFactor = 1.0;
@@ -2656,8 +2694,8 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       if (!sat.visible) return;
       const pos = this.toSceneFromECI(sat.eci_km, sat.gmst);
       const r = pos.length();
-      // Validación rango
-      if (this.debugLogs && (r < 0.101 || r > 0.5) && this.frameId % this.LOG_EVERY_N_FRAMES === 0) {
+      // Validación rango expandido para órbitas altas (GEO)
+      if (this.debugLogs && (r < 0.101 || r > 1.2) && this.frameId % this.LOG_EVERY_N_FRAMES === 0) {
         console.warn(`[SAT-RANGE] r fuera de rango: r=${r.toFixed(6)} idx=${sat.index}`);
       }
       this.instanceMatrix.makeScale(scale, scale, scale);
@@ -2731,7 +2769,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       if (!sat.visible) return;
       const pos = this.toSceneFromECI(sat.eci_km, sat.gmst);
       const r = pos.length();
-      if (this.debugLogs && (r < 0.101 || r > 0.5) && this.frameId % this.LOG_EVERY_N_FRAMES === 0) {
+      if (this.debugLogs && (r < 0.101 || r > 1.2) && this.frameId % this.LOG_EVERY_N_FRAMES === 0) {
         console.warn(`[SAT-RANGE] r fuera de rango: r=${r.toFixed(6)} idx=${sat.index}`);
       }
       this.instanceMatrix.makeScale(scale, scale, scale);

@@ -1,7 +1,9 @@
 /* === Top Banner === */
 .top-banner { position:fixed; left:20px; right:20px; top:12px; height:60px; display:flex; align-items:center; gap:40px; padding:0 42px; background:linear-gradient(135deg, rgba(10,14,22,0.85), rgba(18,24,36,0.85)); backdrop-filter:blur(26px) saturate(180%); -webkit-backdrop-filter:blur(26px) saturate(180%); border:1px solid rgba(255,255,255,0.07); border-radius:26px; z-index:120; font-size:0.75rem; box-shadow:0 18px 50px -18px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.04); }
 .top-banner:before { content:''; position:absolute; left:0; top:0; bottom:0; width:140px; background:radial-gradient(circle at 30% 50%, rgba(79,163,255,0.22), transparent 70%); pointer-events:none; filter:blur(18px); opacity:.65; }
-.brand { font-size:1.1rem; font-weight:600; letter-spacing:.6px; background:linear-gradient(90deg,#ffffff,#aac9ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+.brand { display: flex; align-items: center; gap: 5px; }
+.brand-logo { height: 36px; width: auto; max-width: 200px; object-fit: contain; }
+.brand-text { font-size:1.1rem; font-weight:600; letter-spacing:.6px; background:linear-gradient(90deg,#ffffff,#aac9ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
 .brand .accent { color:#4fa3ff; }
 .nav-links { display:flex; align-items:center; gap:16px; }
 .nav-item { text-decoration:none; color:rgba(255,255,255,0.7); position:relative; padding:4px 6px; border-radius:6px; transition: background .25s, color .25s; }
@@ -153,7 +155,15 @@ select option { background: #111; color:#fff; }
 .search-panel.minimized .panel-minimize-btn { display:none; }
 
 /* === Panel detalle satélite === */
-.sat-detail-panel { position:absolute; left:40px; bottom:14px; width:460px; max-height:60vh; max-width:calc(100% - 120px); background:linear-gradient(135deg, rgba(18,22,30,0.84), rgba(10,14,20,0.84)); border:1px solid rgba(255,255,255,0.08); border-radius:24px; backdrop-filter:blur(22px) saturate(170%); -webkit-backdrop-filter:blur(22px) saturate(170%); box-shadow:0 18px 54px -18px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.05); z-index:52; animation: panelEnter .5s cubic-bezier(.4,.14,.3,1); display:flex; flex-direction:row; transition:height .35s ease,width .3s ease; }
+.sat-detail-panel { position:absolute; left:40px; bottom:14px; width:460px; max-height:60vh; max-width:calc(100% - 120px); background:linear-gradient(135deg, rgba(18,22,30,0.84), rgba(10,14,20,0.84)); border:1px solid rgba(255,255,255,0.08); border-radius:24px; backdrop-filter:blur(22px) saturate(170%); -webkit-backdrop-filter:blur(22px) saturate(170%); box-shadow:0 18px 54px -18px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.05); z-index:52; animation: panelEnter .5s cubic-bezier(.4,.14,.3,1); display:flex; flex-direction:column; transition:height .35s ease,width .3s ease; }
+
+.sat-panel-header { padding: 8px 70px 8px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 8px; }
+
+.sat-name-display { display: flex; align-items: center; gap: 8px; }
+
+.sat-name { font: 600 14px 'Inter', sans-serif; color: #e4ecf6; letter-spacing: 0.3px; }
+
+.sat-id { font: 500 12px 'Inter', sans-serif; color: #a8b4c8; background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); }
 .sat-detail-panel.collapsed { display:none; }
 .sat-mini-header { position:absolute; margin-top: 90px;left:40px; display:inline-flex; align-items:center; gap:10px; padding:8px 16px 8px 12px; background:linear-gradient(135deg, rgba(18,22,30,0.80), rgba(12,16,24,0.78)); border:1px solid rgba(255,255,255,0.10); border-radius:16px; cursor:pointer; user-select:none; backdrop-filter:blur(18px) saturate(170%); -webkit-backdrop-filter:blur(18px) saturate(170%); box-shadow:0 14px 38px -14px rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.05); font-size:0.66rem; letter-spacing:.4px; animation: panelEnter .4s ease; transition:top .35s cubic-bezier(.4,.14,.3,1); }
 .sat-mini-header .mini-icon { font-size:1rem; opacity:.9; }
@@ -164,19 +174,19 @@ select option { background: #111; color:#fff; }
 .sat-mini-header .mini-close:hover { background:rgba(255,255,255,0.2); }
 .sat-mini-header .mini-close:active { transform:scale(.82); }
 .sat-mini-header:hover { border-color:#4fa3ff; box-shadow:0 0 0 1px rgba(79,163,255,0.5), 0 10px 34px -14px rgba(79,163,255,0.5); }
-.sat-panel-min-btn { position:absolute; top:8px; right:46px; width:30px; height:30px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.12); color:#fff; cursor:pointer; font-size:0.9rem; display:flex; align-items:center; justify-content:center; transition:background .25s, transform .25s; z-index:10; pointer-events:auto; }
+.sat-panel-min-btn { position:absolute; top:8px; right:46px; width:30px; height:24px; border-radius:8px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.12); color:#fff; cursor:pointer; font-size:0.8rem; display:flex; align-items:center; justify-content:center; transition:background .25s, transform .25s; z-index:10; pointer-events:auto; }
 .sat-panel-min-btn:hover { background:rgba(255,255,255,0.2); }
 .sat-panel-min-btn:active { transform:scale(.85); }
-.sat-panel-close-btn { position:absolute; top:8px; right:8px; width:30px; height:30px; border-radius:10px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.12); color:#fff; cursor:pointer; font-size:0.75rem; display:flex; align-items:center; justify-content:center; transition:background .25s, transform .25s; z-index:11; pointer-events:auto; }
+.sat-panel-close-btn { position:absolute; top:8px; right:8px; width:30px; height:24px; border-radius:8px; border:1px solid rgba(255,255,255,0.18); background:rgba(255,255,255,0.12); color:#fff; cursor:pointer; font-size:0.7rem; display:flex; align-items:center; justify-content:center; transition:background .25s, transform .25s; z-index:11; pointer-events:auto; }
 .sat-panel-close-btn:hover { background:rgba(255,255,255,0.2); }
 .sat-panel-close-btn:active { transform:scale(.85); }
-.sat-detail-inner { display:flex; flex:1; overflow:hidden; min-height:280px; }
+.sat-detail-inner { display:flex; flex:1; overflow:hidden; min-height:280px; flex-direction: row; }
 .sat-tabs { width:140px; padding:10px 10px 10px 10px; display:flex; flex-direction:column; gap:6px; border-right:1px solid rgba(255,255,255,0.07); height:100%; box-sizing:border-box; }
 .sat-tab { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.10); color:#e4ecf6; font-size:0.58rem; line-height:1.15; padding:8px 8px; border-radius:11px; cursor:pointer; text-align:left; font-weight:600; letter-spacing:.6px; text-transform:uppercase; transition:background .22s,border .22s,box-shadow .25s,transform .22s; flex:1; display:flex; align-items:center; }
 .sat-tabs .sat-tab { flex:1 1 0; }
 .sat-tab:hover { background:rgba(255,255,255,0.12); }
 .sat-tab.active { background:linear-gradient(140deg, rgba(79,163,255,0.35), rgba(79,163,255,0.12)); border-color:#4fa3ff; color:#fff; box-shadow:0 0 0 1px rgba(79,163,255,0.5), 0 4px 14px -6px rgba(79,163,255,0.45); }
-.sat-tab-content { flex:1; padding:14px 18px 18px; overflow:auto; position:relative; }
+.sat-tab-content { flex:1; padding:14px 60px 18px 18px; overflow:auto; position:relative; }
 .sat-tab-content::-webkit-scrollbar { width:10px; }
 .sat-tab-content::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.15); border-radius:6px; }
 .sat-tab-content::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.28); }
@@ -401,10 +411,10 @@ select.constellation-native:focus { box-shadow:0 0 0 1px #4fa3ff, 0 0 0 3px rgba
 
 /* === Sat DOM Labels (CSS2D) === */
 .label-layer { pointer-events:none; }
-.sat-label-pill { position:relative; display:inline-flex; align-items:center; gap:10px; padding:6px 16px 6px 14px; font-size:12px; font-weight:600; letter-spacing:.4px; font-family:'Inter','Segoe UI','Roboto',system-ui,sans-serif; color:#fff; border-radius:34px; background:linear-gradient(160deg, rgba(20,26,36,0.88), rgba(12,16,24,0.70)); backdrop-filter:blur(14px) saturate(170%); -webkit-backdrop-filter:blur(14px) saturate(170%); border:1px solid rgba(255,255,255,0.08); box-shadow:0 0 0 1px rgba(255,255,255,0.04), 0 4px 18px -6px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.05); -webkit-font-smoothing:antialiased; text-transform:uppercase; pointer-events:none; }
+.sat-label-pill { position:relative; display:inline-flex; align-items:center; gap:4px; padding:2px 6px 2px 4px; font-size:6px; font-weight:600; letter-spacing:.2px; font-family:'Inter','Segoe UI','Roboto',system-ui,sans-serif; color:#fff; border-radius:20px; background:linear-gradient(160deg, rgba(20,26,36,0.88), rgba(12,16,24,0.70)); backdrop-filter:blur(14px) saturate(170%); -webkit-backdrop-filter:blur(14px) saturate(170%); border:1px solid rgba(255,255,255,0.08); box-shadow:0 0 0 1px rgba(255,255,255,0.04), 0 4px 18px -6px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.05); -webkit-font-smoothing:antialiased; text-transform:uppercase; pointer-events:none; }
 .sat-label-pill.state-active { border-color:#39FF14; box-shadow:0 0 0 1px rgba(57,255,20,0.55), 0 0 22px -10px rgba(57,255,20,0.55), 0 6px 22px -10px rgba(0,0,0,0.7); }
 .sat-label-pill.state-decay { border-color:#ff9f2b; box-shadow:0 0 0 1px rgba(255,159,43,0.55), 0 0 22px -10px rgba(255,159,43,0.5), 0 6px 22px -10px rgba(0,0,0,0.7); }
-.sat-label-pill .state-dot { width:12px; height:12px; border-radius:50%; display:inline-block; position:relative; box-shadow:0 0 0 2px rgba(255,255,255,0.08) inset, 0 0 10px -2px rgba(0,0,0,0.6); }
-.sat-label-pill.state-active .state-dot { background:#39FF14; box-shadow:0 0 8px 2px rgba(57,255,20,0.65), 0 0 0 2px rgba(255,255,255,0.08) inset; }
-.sat-label-pill.state-decay .state-dot { background:#ff9f2b; box-shadow:0 0 8px 2px rgba(255,159,43,0.6), 0 0 0 2px rgba(255,255,255,0.08) inset; }
+.sat-label-pill .state-dot { width:6px; height:6px; border-radius:50%; display:inline-block; position:relative; box-shadow:0 0 0 1px rgba(255,255,255,0.08) inset, 0 0 4px -1px rgba(0,0,0,0.6); }
+.sat-label-pill.state-active .state-dot { background:#39FF14; box-shadow:0 0 6px 1px rgba(57,255,20,0.65), 0 0 0 1px rgba(255,255,255,0.08) inset; }
+.sat-label-pill.state-decay .state-dot { background:#ff9f2b; box-shadow:0 0 6px 1px rgba(255,159,43,0.6), 0 0 0 1px rgba(255,255,255,0.08) inset; }
 .sat-label-pill .sat-text { line-height:1; position:relative; top:1px; }

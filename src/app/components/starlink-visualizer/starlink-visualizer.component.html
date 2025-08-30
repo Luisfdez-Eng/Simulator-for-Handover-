@@ -11,7 +11,7 @@
 
 <!-- Panel flotante de búsqueda / constelaciones (rediseño moderno) -->
 <div class="search-panel glass-elevated" [class.minimized]="searchPanelMinimized">
-  <button class="panel-minimize-btn" (click)="toggleSearchPanelMinimized(true)" aria-label="Minimizar" title="Minimizar">–</button>
+  <button class="panel-minimize-btn" (click)="toggleSearchPanelMinimized(true)" aria-label="Minimize" title="Minimize">–</button>
   <div class="finder-minimized" (click)="toggleSearchPanelMinimized(false)">
     <div class="mini-title">SAT Finder</div>
     <div class="mini-desc">Track satellites across constellations</div>
@@ -20,10 +20,10 @@
   <div class="finder-body">
     <div class="finder-header">
       <div class="finder-title">SAT Finder</div>
-      <div class="finder-subtitle">Rastrea y selecciona satélites</div>
+      <div class="finder-subtitle">Track and select satellites</div>
     </div>
   <div class="finder-field">
-    <label for="constellationSel">Constelación</label>
+    <label for="constellationSel">Constellation</label>
     <div class="constellation-dropdown" [class.open]="showConstellationDropdown">
       <button type="button" class="constellation-trigger" (click)="toggleConstellationDropdown()">
         <span class="trigger-text">{{ tle.getConstellationLabel(selectedConstellation) }}</span>
@@ -37,78 +37,78 @@
     </div>
   </div>
   <div class="finder-field">
-    <label for="satSearchInput">Nombre o NORAD ID</label>
+    <label for="satSearchInput">Name or NORAD ID</label>
     <div class="input-wrapper">
       <span class="icon-search" aria-hidden="true">🔍</span>
-  <input id="satSearchInput" type="text" autocomplete="off" placeholder="Ej: 55342 o STARLINK" [(ngModel)]="searchQuery" (input)="onSearchChange()" (focus)="onSearchFocus()" (click)="onSearchFocus()" />
-      <button *ngIf="searchQuery" class="clear-btn" (click)="searchQuery=''; onSearchChange();" type="button" aria-label="Limpiar">✕</button>
+  <input id="satSearchInput" type="text" autocomplete="off" placeholder="Ex: 55342 or STARLINK" [(ngModel)]="searchQuery" (input)="onSearchChange()" (focus)="onSearchFocus()" (click)="onSearchFocus()" />
+      <button *ngIf="searchQuery" class="clear-btn" (click)="searchQuery=''; onSearchChange();" type="button" aria-label="Clear">✕</button>
   <div class="search-dropdown" *ngIf="showSearchDropdown" (scroll)="onSearchScroll($event)">
         <div class="search-item" *ngFor="let r of filteredResults" (click)="pickSearchResult(r.index)" [title]="r.label">{{r.label}}</div>
-        <div class="no-results" *ngIf="filteredResults.length===0">Sin resultados</div>
+        <div class="no-results" *ngIf="filteredResults.length===0">No results</div>
       </div>
     </div>
   </div>
   <div class="finder-stats">
-    <span>{{filteredResults.length}} resultados</span>
+    <span>{{filteredResults.length}} results</span>
     <span class="divider">/</span>
-    <span>{{tle.getAllSatrecs().length}} satélites</span>
+    <span>{{tle.getAllSatrecs().length}} satellites</span>
   </div>
   <div class="view-mode-buttons">
-    <button class="view-btn" [class.active]="viewMode==='global'" (click)="activateGlobalView()" title="Vista global">🌐</button>
-    <button class="view-btn" [disabled]="!hasSelectedSatellite" [class.disabled]="!hasSelectedSatellite" [class.active]="viewMode==='satellite'" (click)="activateSatelliteView()" title="Vista satélite (requiere selección)">🛰️</button>
+    <button class="view-btn" [class.active]="viewMode==='global'" (click)="activateGlobalView()" title="Global view">🌐</button>
+    <button class="view-btn" [disabled]="!hasSelectedSatellite" [class.disabled]="!hasSelectedSatellite" [class.active]="viewMode==='satellite'" (click)="activateSatelliteView()" title="Satellite view (requires selection)">🛰️</button>
   </div>
   </div>
 </div>
 
 <!-- Botón de configuración -->
  <div class="Config-dock">
-  <button class="config-toggle" (click)="toggleConfigPanel()" title="Configuración">⚙️</button>
+  <button class="config-toggle" (click)="toggleConfigPanel()" title="Configuration">⚙️</button>
 </div>
 <!-- Tray configuración horizontal -->
 <div class="config-tray" *ngIf="showConfigPanel">
   <div class="tray-header">
-    <span class="tray-title">Configuración</span>
-    <button class="close-tray" (click)="toggleConfigPanel()" aria-label="Cerrar">✕</button>
+    <span class="tray-title">Configuration</span>
+    <button class="close-tray" (click)="toggleConfigPanel()" aria-label="Close">✕</button>
   </div>
   <div class="tray-columns">
     <!-- Columna toggles básicos -->
     <div class="tray-col">
-      <div class="col-title">Capas</div>
-      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showGrid" (change)="applyConfig()" /> <span>Grid terrestre</span></label>
-      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showAxes" (change)="applyConfig()" /> <span>Ejes XYZ</span></label>
-      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showLabels" (change)="applyConfig()" /> <span>Etiquetas extra</span></label>
+      <div class="col-title">Layers</div>
+      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showGrid" (change)="applyConfig()" /> <span>Earth grid</span></label>
+      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showAxes" (change)="applyConfig()" /> <span>XYZ axes</span></label>
+      <label class="chk-line"><input type="checkbox" [(ngModel)]="cfg.showLabels" (change)="applyConfig()" /> <span>Extra labels</span></label>
     </div>
     <!-- Columna colores -->
     <div class="tray-col">
-      <div class="col-title">Colores</div>
-      <div class="mini-label-inline">Satélites</div>
+      <div class="col-title">Colors</div>
+      <div class="mini-label-inline">Satellites</div>
       <div class="color-row tight">
         <div *ngFor="let c of satelliteColorPalette" class="color-swatch" [ngStyle]="{background:c}" [class.selected]="c===cfg.satColor" (click)="setSatelliteColor(c)"></div>
         <div class="color-swatch custom" [ngStyle]="{background:customSatColor}" title="Personalizado">
           <input type="color" [(ngModel)]="customSatColor" (change)="setCustomSatelliteColor()" />
         </div>
       </div>
-      <div class="mini-label-inline" style="margin-top:10px;">Órbita</div>
+      <div class="mini-label-inline" style="margin-top:10px;">Orbit</div>
       <div class="color-row tight">
         <div *ngFor="let c of orbitColorPalette" class="color-swatch" [ngStyle]="{background:c}" [class.selected]="c===cfg.orbitColor" (click)="setOrbitColor(c)"></div>
-        <div class="color-swatch custom" [ngStyle]="{background:customOrbitColor}" title="Personalizado">
+        <div class="color-swatch custom" [ngStyle]="{background:customOrbitColor}" title="Custom">
           <input type="color" [(ngModel)]="customOrbitColor" (change)="setCustomOrbitColor()" />
         </div>
       </div>
     </div>
     <!-- Columna Tierra / Render -->
     <div class="tray-col wide">
-      <div class="col-title">Tierra / Render</div>
+      <div class="col-title">Earth / Render</div>
       <div class="earth-mode-row">
-        <label class="mini-label-inline">Modo</label>
+        <label class="mini-label-inline">Mode</label>
         <select #earthModeSel (change)="onEarthModeChange(earthModeSel.value)" [value]="earthMode">
-          <option value="classic">Clásico</option>
+          <option value="classic">Classic</option>
           <option value="glb">GLB</option>
         </select>
       </div>
       <div *ngIf="earthMode==='glb'" class="pbr-block">
         <label class="chk-line small"><input type="checkbox" [checked]="glbPbrMode" (change)="glbPbrMode=!glbPbrMode; setEarthMode('glb')" /> <span>PBR (HDR)</span></label>
-        <div *ngIf="!glbPbrMode" class="hint-line">Plano: sin luces / HDR</div>
+        <div *ngIf="!glbPbrMode" class="hint-line">Flat: no lights / HDR</div>
         <div *ngIf="glbPbrMode" class="pbr-sliders">
           <label>HDR Int <input type="range" min="0" max="3" step="0.05" [(ngModel)]="pbrEnvMapIntensity" (change)="onPbrParamsChange()" /> <span>{{pbrEnvMapIntensity | number:'1.2-2'}}</span></label>
           <label>Rough Δ <input type="range" min="-0.8" max="0.8" step="0.01" [(ngModel)]="pbrRoughnessDelta" (change)="onPbrParamsChange()" /> <span>{{pbrRoughnessDelta | number:'1.2-2'}}</span></label>
@@ -129,12 +129,21 @@
     <span class="mini-icon">ℹ️</span>
     <span class="mini-title">{{ satelliteInfoPanel.currentName }} <span class="mini-id" *ngIf="satelliteInfoPanel.currentNorad">#{{satelliteInfoPanel.currentNorad}}</span></span>
     <span class="mini-expand">›</span>
-    <button class="mini-close" (click)="onCloseSatellite($event)" aria-label="Cerrar">✕</button>
+    <button class="mini-close" (click)="onCloseSatellite($event)" aria-label="Close">✕</button>
   </div>
   <!-- Panel expandido -->
   <div class="sat-detail-panel" [class.collapsed]="satelliteInfoPanel.collapsed" #satPanel>
-    <button class="sat-panel-close-btn" (click)="onCloseSatellite($event)" title="Cerrar" aria-label="Cerrar">✕</button>
-    <button class="sat-panel-min-btn" (click)="onClickSatellitePanelMin($event)" title="Minimizar" aria-label="Minimizar">–</button>
+    <button class="sat-panel-close-btn" (click)="onCloseSatellite($event)" title="Close" aria-label="Close">✕</button>
+    <button class="sat-panel-min-btn" (click)="onClickSatellitePanelMin($event)" title="Minimize" aria-label="Minimize">–</button>
+    
+    <!-- Título del satélite - visible en todos los tabs -->
+    <div class="sat-panel-header" *ngIf="satelliteInfoPanel.currentName">
+      <div class="sat-name-display">
+        <span class="sat-name">{{ satelliteInfoPanel.currentName }}</span>
+        <span class="sat-id" *ngIf="satelliteInfoPanel.currentNorad">#{{ satelliteInfoPanel.currentNorad }}</span>
+      </div>
+    </div>
+    
     <div class="sat-detail-inner" *ngIf="!satelliteInfoPanel.collapsed">
       <aside class="sat-tabs">
         <button class="sat-tab" *ngFor="let t of satelliteInfoPanel.tabs" [class.active]="satelliteInfoPanel.activeTab===t.id" (click)="setSatelliteInfoTab(t.id)">{{t.label}}</button>
@@ -153,23 +162,26 @@
 
 <!-- Banner superior de navegación -->
 <div class="top-banner">
-  <div class="brand">Handover<span class="accent">.viz</span></div>
+  <div class="brand">
+    <img src="assets/Logo.png" alt="3D Constellation Link Tracker" class="brand-logo">
+    <span class="brand-text">3DConstellationTracker<span class="accent">.Space</span></span>
+  </div>
   <nav class="nav-links">
-    <a href="#" class="nav-item">Acerca</a>
-    <a href="#" class="nav-item">Constelaciones</a>
-    <a href="#" class="nav-item">Tipos</a>
-    <a href="#" class="nav-item">Funciones</a>
+    <a href="#" class="nav-item">About</a>
+    <a href="#" class="nav-item">Constellations</a>
+    <a href="#" class="nav-item">Types</a>
+    <a href="#" class="nav-item">Functions</a>
     <a href="#" class="nav-item">Insights</a>
-    <a href="#" class="nav-item">Más</a>
+    <a href="#" class="nav-item">More</a>
   </nav>
   <div class="banner-extra">Alpha Version • Real Time • Demo</div>
 </div>
 
 <!-- Dock vertical derecho -->
 <div class="module-dock">
-  <button class="dock-btn" [class.active]="openModule==='geo'" (click)="toggleModule('geo')" title="Localización UE">📍</button>
-  <button class="dock-btn" [class.active]="openModule==='link'" (click)="toggleModule('link')" title="Parámetros enlace">📡</button>
-  <button class="dock-btn" [class.active]="openModule==='metrics'" (click)="toggleModule('metrics')" title="Métricas">📊</button>
+  <button class="dock-btn" [class.active]="openModule==='geo'" (click)="toggleModule('geo')" title="UE Location">📍</button>
+  <button class="dock-btn" [class.active]="openModule==='link'" (click)="toggleModule('link')" title="Link Parameters">📡</button>
+  <button class="dock-btn" [class.active]="openModule==='metrics'" (click)="toggleModule('metrics')" title="Metrics">📊</button>
 </div>
 
 <!-- Panel flotante módulo GEO -->
@@ -177,12 +189,12 @@
   <div class="flyout-header">
     <div>
       <div class="flyout-title">Geo Locator</div>
-      <div class="flyout-sub">Posición UE</div>
+      <div class="flyout-sub">UE Position</div>
     </div>
     <button class="close-flyout" (click)="toggleModule('geo')">✕</button>
   </div>
   <div class="flyout-section">
-    <div class="mini-label">Coordenadas</div>
+    <div class="mini-label">Coordinates</div>
     <div class="geo-row compact">
       <label>Lat</label>
       <input type="number" [(ngModel)]="userLat" (change)="updateUserPosition()" min="-90" max="90" step="0.0001" />
@@ -190,10 +202,10 @@
       <input type="number" [(ngModel)]="userLon" (change)="updateUserPosition()" min="-180" max="180" step="0.0001" />
     </div>
     <div class="mini-label" style="margin-top:10px;">Auto (GPS)</div>
-    <div class="soon-box">Próximamente</div>
-    <div class="mini-label" style="margin-top:14px;">Ciudad rápida</div>
+    <div class="soon-box">Coming Soon</div>
+    <div class="mini-label" style="margin-top:14px;">Quick City</div>
     <div class="city-search-wrapper">
-      <input type="text" placeholder="Buscar ciudad (ej: Madrid)" [(ngModel)]="cityQuery" (input)="onCitySearchChange()" (focus)="onCitySearchFocus()" />
+      <input type="text" placeholder="Search city (ex: Madrid)" [(ngModel)]="cityQuery" (input)="onCitySearchChange()" (focus)="onCitySearchFocus()" />
       <button *ngIf="cityQuery" class="clear-btn-mini" (click)="cityQuery=''; onCitySearchChange();" type="button">✕</button>
     </div>
   </div>
@@ -201,16 +213,16 @@
 
 <!-- Panel futuros (placeholders) -->
 <div class="module-flyout" *ngIf="openModule==='link'">
-  <div class="flyout-header"><div class="flyout-title">Parámetros Enlace</div><button class="close-flyout" (click)="toggleModule('link')">✕</button></div>
-  <div class="placeholder-block">(Placeholder) Aquí irán parámetros de elevación, histéresis, cooldown, throughput target, etc.</div>
+  <div class="flyout-header"><div class="flyout-title">Link Parameters</div><button class="close-flyout" (click)="toggleModule('link')">✕</button></div>
+  <div class="placeholder-block">(Placeholder) Here will be elevation parameters, hysteresis, cooldown, throughput target, etc.</div>
 </div>
 <div class="module-flyout" *ngIf="openModule==='metrics'">
-  <div class="flyout-header"><div class="flyout-title">Métricas</div><button class="close-flyout" (click)="toggleModule('metrics')">✕</button></div>
-  <div class="placeholder-block">(Placeholder) KPIs de satélite seleccionado, latencia media, jitter, handovers recientes.</div>
+  <div class="flyout-header"><div class="flyout-title">Metrics</div><button class="close-flyout" (click)="toggleModule('metrics')">✕</button></div>
+  <div class="placeholder-block">(Placeholder) Selected satellite KPIs, average latency, jitter, recent handovers.</div>
 </div>
 <div class="module-flyout" *ngIf="openModule==='config'">
-  <div class="flyout-header"><div class="flyout-title">Configuración</div><button class="close-flyout" (click)="toggleModule('config')">✕</button></div>
-  <div class="placeholder-block">(Placeholder) Opciones visuales globales, modos de Tierra, colores y toggles.</div>
+  <div class="flyout-header"><div class="flyout-title">Configuration</div><button class="close-flyout" (click)="toggleModule('config')">✕</button></div>
+  <div class="placeholder-block">(Placeholder) Global visual options, Earth modes, colors and toggles.</div>
 </div>
 
 <!-- Dropdown flotante ciudades fuera del flujo para evitar scroll interno -->
@@ -219,5 +231,5 @@
     <span class="city-name">{{c.name}}</span>
     <span class="city-coord">{{c.lat.toFixed(2)}}, {{c.lon.toFixed(2)}}</span>
   </div>
-  <div class="no-results" *ngIf="filteredCities.length===0">Sin resultados</div>
+  <div class="no-results" *ngIf="filteredCities.length===0">No results</div>
 </div>

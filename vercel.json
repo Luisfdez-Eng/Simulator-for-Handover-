@@ -18,7 +18,7 @@
   ],
   "headers": [
     {
-      "source": "/(.*\\.(js|worker\\.js))",
+      "source": "/(.*\\.js)",
       "headers": [
         {
           "key": "Cross-Origin-Embedder-Policy",

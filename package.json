@@ -1,11 +1,14 @@
 {
-  "name": "starlink-handover-visualizer",
+  "name": "3d-constellation-tracker",
   "version": "1.0.0",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --open",
     "start-mobile": "ng serve --host 0.0.0.0 --port 4200 --disable-host-check",
-  "build": "ng build"
+    "build": "ng build --configuration production",
+    "vercel-build": "ng build --configuration production",
+    "test": "ng test",
+    "lint": "ng lint"
   },
   "dependencies": {
     "@angular/animations": "^17.3.0",

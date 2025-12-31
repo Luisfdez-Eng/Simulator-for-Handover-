@@ -115,10 +115,20 @@ export class TleRemoteService {
         throw new Error('Empty response from API');
       }
 
+      console.log(`[TLE-REMOTE] Fetched ${response.length} bytes for ${groupId}`);
+      console.log(`[TLE-REMOTE] Response preview:`, response.substring(0, 300));
+
+      // Verificar si es JSON de error (el proxy devuelve JSON en errores)
+      if (response.trim().startsWith('{')) {
+        console.error('[TLE-REMOTE] Received JSON error response:', response);
+        throw new Error('Proxy returned error response');
+      }
+
       return response;
       
     } catch (error) {
       if (error instanceof HttpErrorResponse) {
+        console.error(`[TLE-REMOTE] HTTP error:`, error.status, error.statusText);
         throw new Error(`HTTP ${error.status}: ${error.message}`);
       }
       throw error;

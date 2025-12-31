@@ -1,6 +1,7 @@
 import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
+import { HttpClientModule } from '@angular/common/http';
 
 import { AppComponent } from './app.component';
 import { StarlinkVisualizerComponent } from './components/starlink-visualizer/starlink-visualizer.component';
@@ -24,7 +25,8 @@ import { SatHardwareComponent } from './components/sat-hardware/sat-hardware.com
   ],
   imports: [
     BrowserModule,
-    FormsModule
+    FormsModule,
+    HttpClientModule
   ],
   providers: [],
   bootstrap: [AppComponent]

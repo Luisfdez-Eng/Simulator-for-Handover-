@@ -44,6 +44,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
   currentMetrics: SatelliteMetrics | null = null; // 🎯 FORZADO: Mantener siempre null para interfaz limpia
   userLat = 0;
   userLon = 0;
+  selectedConstellation: string = 'starlink'; // Tipo string para compatibilidad con template
   hysteresis = 5;
   cooldown = 30;
   loadingFirstFrame = true;
@@ -165,7 +166,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.selectedConstellation = 'starlink';
     // Cargar ajustes persistidos antes de inicializar escena
     this.loadSettingsFromStorage();
-    await this.tle.loadConstellation(this.selectedConstellation); // carga inicial
+    await this.tle.loadConstellation(this.selectedConstellation as any); // carga inicial
     this.initThree();
     this.initializeLabelSystem();
     // Crear Tierra según modo persistido
@@ -632,7 +633,6 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     this.changeConstellation(c);
   }
   public onConstellationScroll(ev: any) { /* placeholder para futura paginación */ }
-  public selectedConstellation: string = 'starlink';
   // Sugerencias incrementales
   private suggestionMode = false;
   private allSuggestionResults: { index: number; label: string }[] = [];
@@ -771,20 +771,9 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     const prevSelected = this.selectedConstellation;
     const prevActive = this.tle.getActiveConstellation();
     console.log(`[CONST] changeConstellation() inicio -> prevSelected=${prevSelected} prevActive=${prevActive} new=${newConstellation}`);
-    // Asegurar manifiesto actualizado (por si se editó en runtime)
-    await this.tle.forceReloadManifest?.();
     this.selectedConstellation = newConstellation;
     await this.reloadConstellation();
     console.log(`[CONST] changeConstellation() fin -> active=${this.tle.getActiveConstellation()} sats=${this.tle.getAllSatrecs().length}`);
-  }
-  public async onConstellationSelectClick() {
-    if (this.tle.forceReloadManifest) {
-      try {
-        await this.tle.forceReloadManifest();
-      } catch (e) {
-        console.warn('[CONST] Error al refrescar manifiesto en click', e);
-      }
-    }
   }
   private async reloadConstellation() {
     // Limpiar selección/órbitas/labels/resultados
@@ -805,7 +794,7 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
     }
 
     console.log(`[CONST] Cargando constelación '${this.selectedConstellation}'`);
-    await this.tle.loadConstellation(this.selectedConstellation);
+    await this.tle.loadConstellation(this.selectedConstellation as any);
     console.log(`[CONST] Satélites cargados = ${this.tle.getAllSatrecs().length}`);
     // Reset de tiempo simulación para evitar desfaces visuales entre constelaciones diferentes
     this.simulatedDate = new Date();
@@ -2894,6 +2883,56 @@ export class StarlinkVisualizerComponent implements OnInit, OnDestroy {
       (this.selectedSatelliteMesh.material as any).color.set(this.cfg.orbitColor);
       (this.selectedSatelliteMesh.material as any).needsUpdate = true;
     }
+  }
+  //endregion
+
+  //region 🆕 TLE Dynamic Update Methods
+  /**
+   * Forzar actualización de TLE desde origen remoto
+   */
+  async forceRefreshTle(): Promise<void> {
+    console.log('🔄 Forcing TLE refresh...');
+    
+    if (!this.tle.loadingStatus.loading) {
+      await this.tle.forceRefresh();
+      
+      // Recrear satélites con nuevos TLE
+      if (this.satsMesh) {
+        this.scene.remove(this.satsMesh);
+        this.satsMesh.geometry.dispose();
+        (this.satsMesh.material as THREE.Material).dispose();
+        this.satsMesh = null;
+      }
+      
+      this.createSatellites();
+      console.log('✅ TLE refreshed and satellites recreated');
+    }
+  }
+
+  /**
+   * Obtener tiempo relativo desde timestamp (ej: "2m ago", "1h ago")
+   */
+  getTimeAgo(timestamp: number | null): string {
+    if (!timestamp) return 'Never';
+    
+    const now = Date.now();
+    const diffMs = now - timestamp;
+    const diffSec = Math.floor(diffMs / 1000);
+    const diffMin = Math.floor(diffSec / 60);
+    const diffHour = Math.floor(diffMin / 60);
+    const diffDay = Math.floor(diffHour / 24);
+    
+    if (diffDay > 0) return `${diffDay}d ago`;
+    if (diffHour > 0) return `${diffHour}h ago`;
+    if (diffMin > 0) return `${diffMin}m ago`;
+    return 'Just now';
+  }
+
+  /**
+   * M\u00e9todo auxiliar para template: obtener label de constelaci\u00f3n
+   */
+  getConstellationLabel(name: string): string {
+    return this.tle.getConstellationLabel(name as any);
   }
   //endregion
 

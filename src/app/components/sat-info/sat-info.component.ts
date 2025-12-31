@@ -137,7 +137,7 @@ export class SatInfoComponent implements OnInit, OnChanges {
       // Parsear información básica
       const noradId = this.tle.extractNoradId(line1) || 'Unknown';
       const name = satData.name || `SAT-${this.satIndex + 1}`;
-      const constellation = this.tle.getConstellationLabel(this.tle.getActiveConstellation() || 'unknown');
+      const constellation = this.tle.getConstellationLabel((this.tle.getActiveConstellation() || 'starlink') as any);
 
       // International Designator (columnas 10-17 de line1)
       const internationalDesignator = line1.substring(9, 17).trim();

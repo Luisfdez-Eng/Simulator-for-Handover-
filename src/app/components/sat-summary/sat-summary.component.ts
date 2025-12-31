@@ -80,7 +80,7 @@ export class SatSummaryComponent implements OnInit, OnChanges {
       const line1 = satData.line1;
       const noradId = this.tle.extractNoradId(line1) || 'Unknown';
       const name = satData.name || `SAT-${this.satIndex + 1}`;
-      const constellation = this.tle.getConstellationLabel(this.tle.getActiveConstellation() || 'unknown');
+      const constellation = this.tle.getConstellationLabel((this.tle.getActiveConstellation() || 'starlink') as any);
       const internationalDesignator = line1.substring(9, 17).trim();
 
       this.satelliteData = {

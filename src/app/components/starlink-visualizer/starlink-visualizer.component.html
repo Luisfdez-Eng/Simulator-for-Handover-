@@ -8,6 +8,23 @@
   <!-- Capa de carga minimal (centrada) -->
   <div *ngIf="loadingFirstFrame" class="loading-badge glass-tiny">{{loadingProgress}}% • {{firstFrameReceived}}/{{firstFrameSatCount}}</div>
 
+  <!-- 🆕 TLE Status Badge (dinámico) -->
+  <div class="tle-status-badge glass-tiny" [class.loading]="tle.loadingStatus.loading" [class.error]="tle.loadingStatus.error">
+    <span class="status-icon" *ngIf="!tle.loadingStatus.loading">
+      <span *ngIf="tle.loadingStatus.source === 'cache'">📦</span>
+      <span *ngIf="tle.loadingStatus.source === 'remote'">🌐</span>
+      <span *ngIf="tle.loadingStatus.source === 'fallback'">⚠️</span>
+    </span>
+    <span class="status-text">
+      <span *ngIf="tle.loadingStatus.loading">Loading TLE... {{tle.loadingStatus.progress}}%</span>
+      <span *ngIf="!tle.loadingStatus.loading && tle.loadingStatus.source">
+        {{ tle.loadingStatus.source | titlecase }} • {{ getTimeAgo(tle.loadingStatus.lastUpdate) }}
+      </span>
+      <span *ngIf="tle.loadingStatus.error" class="error-text">{{ tle.loadingStatus.error }}</span>
+    </span>
+    <button class="refresh-btn" *ngIf="!tle.loadingStatus.loading" (click)="forceRefreshTle()" title="Force refresh TLE">↻</button>
+  </div>
+
 
 <!-- Panel flotante de búsqueda / constelaciones (rediseño moderno) -->
 <div class="search-panel glass-elevated" [class.minimized]="searchPanelMinimized">
@@ -26,7 +43,7 @@
     <label for="constellationSel">Constellation</label>
     <div class="constellation-dropdown" [class.open]="showConstellationDropdown">
       <button type="button" class="constellation-trigger" (click)="toggleConstellationDropdown()">
-        <span class="trigger-text">{{ tle.getConstellationLabel(selectedConstellation) }}</span>
+        <span class="trigger-text">{{ getConstellationLabel(selectedConstellation) }}</span>
         <span class="trigger-chevron">▾</span>
       </button>
       <div class="constellation-menu" *ngIf="showConstellationDropdown" (scroll)="onConstellationScroll($event)">

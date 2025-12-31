@@ -1,12 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "name": "3d-constellation-tracker",
   "version": 2,
   "builds": [
     {
       "src": "package.json",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "dist/starlink-handover-visualizer"
+        "distDir": "dist/handover-simulator"
       }
     }
   ],

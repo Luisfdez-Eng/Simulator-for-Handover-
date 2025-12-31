@@ -123,18 +123,12 @@ export class TleParserService {
    */
   validateRawTle(tleData: string): boolean {
     if (!tleData || tleData.trim().length === 0) {
-      console.error('[TLE-PARSER] Empty or null data');
       return false;
     }
 
     // Verificar que contenga al menos una línea válida
     const hasLine1 = tleData.includes('1 ');
     const hasLine2 = tleData.includes('2 ');
-
-    if (!hasLine1 || !hasLine2) {
-      console.error('[TLE-PARSER] Missing TLE line markers', { hasLine1, hasLine2 });
-      console.error('[TLE-PARSER] Data sample:', tleData.substring(0, 300));
-    }
 
     return hasLine1 && hasLine2;
   }

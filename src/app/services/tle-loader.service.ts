@@ -55,13 +55,8 @@ export class TleLoaderService {
       this.loadingStatus.progress = 60;
       this.loadingStatus.source = result.source;
 
-      // Debug: mostrar primeras líneas
-      console.log(`[TLE-DEBUG] Data length: ${result.data.length} bytes`);
-      console.log(`[TLE-DEBUG] First 500 chars:`, result.data.substring(0, 500));
-
       // Validar contenido
       if (!this.parser.validateRawTle(result.data)) {
-        console.error('[TLE-DEBUG] Validation failed for data:', result.data.substring(0, 200));
         throw new Error('Invalid TLE data format');
       }
 

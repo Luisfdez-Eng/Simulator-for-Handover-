@@ -1,0 +1,7 @@
+node_modules
+.angular
+.git
+*.log
+*.md
+!README.md
+.vscode

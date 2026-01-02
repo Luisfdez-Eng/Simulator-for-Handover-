@@ -11,6 +11,9 @@
 npm-debug.log
 yarn-error.log
 
+# Vercel
+.vercel
+
 # IDEs and editors
 .idea/
 .project
@@ -236,3 +239,5 @@ Thumbs.db
 # Temporary folders
 tmp/
 temp/
+.vercel
+.env*.local

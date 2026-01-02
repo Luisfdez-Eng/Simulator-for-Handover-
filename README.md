@@ -92,17 +92,41 @@ git --version
    Navigate to http://localhost:4200
    ```
 
-### Production Build
+### Production Build & Deployment
 
+#### Deploy to Vercel (Recommended)
+```bash
+# Install Vercel CLI (first time only)
+npm install -g vercel
+
+# Deploy to production
+vercel --prod
+
+# Or connect GitHub repo for automatic deployments:
+# 1. Push to GitHub
+# 2. Import project in Vercel Dashboard
+# 3. Auto-deploy on every push to main
+```
+
+#### Manual Build
 ```bash
 # Build for production
-ng build --configuration production
+npm run build
 
-# Serve built files (optional)
-npx http-server dist/handover-simulator -p 8080
+# Output will be in dist/starlink-handover-visualizer
 ```
 
 ## ⚡ Quick Start
+
+### Basic Development
+
+```bash
+npm start
+# Starts Angular dev server on http://localhost:4200
+# TLE data loaded from static files (fast, works offline)
+```
+
+---
 
 ### Basic Navigation
 

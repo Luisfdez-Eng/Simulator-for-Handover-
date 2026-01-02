@@ -164,13 +164,10 @@ export class TleRemoteService {
    * Determinar ruta de fallback (assets estáticos)
    */
   private getFallbackPath(groupId: string): string {
-    // Mapeo de grupos a archivos estáticos
-    const fallbackMap: Record<string, string> = {
-      'starlink': '/assets/gp.txt', // Archivo existente
-      // Otros grupos pueden agregarse si existen assets
-    };
-
-    return fallbackMap[groupId] || '/assets/gp.txt'; // Default a Starlink
+    // Usar convención de nombres: gp_<groupId>.txt
+    // Los archivos existentes en assets son:
+    // gp_starlink.txt, gp_oneweb.txt, gp_kuiper.txt, etc.
+    return `/assets/gp_${groupId}.txt`;
   }
 
   /**

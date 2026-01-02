@@ -1,5 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
-
 // 🔒 Allowlist de grupos permitidos (seguridad)
 const ALLOWED_GROUPS: Record<string, string> = {
   'starlink': 'starlink',
@@ -26,16 +24,24 @@ const ALLOWED_GROUPS: Record<string, string> = {
 const CACHE_TTL_SECONDS = 2 * 24 * 60 * 60; // 2 días
 const STALE_WHILE_REVALIDATE = 24 * 60 * 60; // 1 día
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export const config = {
+  runtime: 'edge',
+};
+
+export default async function handler(req: Request) {
   // 🎯 Extraer parámetro de constelación
-  const group = (req.query['group'] as string)?.toLowerCase()?.trim();
+  const url = new URL(req.url);
+  const group = url.searchParams.get('group')?.toLowerCase()?.trim();
 
   // ✅ Validación de parámetro
   if (!group || !ALLOWED_GROUPS[group]) {
-    return res.status(400).json({
+    return new Response(JSON.stringify({
       error: 'Invalid or missing group parameter',
       allowed: Object.keys(ALLOWED_GROUPS),
       example: '/api/tle?group=starlink'
+    }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 
@@ -66,11 +72,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // ❌ Manejo de errores HTTP
     if (!celestrakResponse.ok) {
       console.error(`[TLE-PROXY] CelesTrak returned ${celestrakResponse.status}`);
-      return res.status(502).json({
+      return new Response(JSON.stringify({
         error: 'CelesTrak service unavailable',
         status: celestrakResponse.status,
         group,
         url: celestrakUrl
+      }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
 
@@ -88,22 +97,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 🎯 Validación básica del contenido
     if (!tleData.includes('1 ') || !tleData.includes('2 ')) {
       console.warn(`[TLE-PROXY] ⚠️ Response doesn't look like valid TLE data`);
-      return res.status(502).json({
+      return new Response(JSON.stringify({
         error: 'Invalid TLE format received from CelesTrak',
         group
+      }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // 📦 Headers de caché agresivos para CDN
-    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Cache-Control', `public, max-age=0, s-maxage=${CACHE_TTL_SECONDS}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}`);
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-TLE-Group', group);
-    res.setHeader('X-TLE-Satellites', approxSatCount.toString());
-    res.setHeader('X-Cache-TTL', CACHE_TTL_SECONDS.toString());
+    // 📦 Headers de caché agresivos para CDN + metadata
+    const headers = new Headers({
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': `public, max-age=0, s-maxage=${CACHE_TTL_SECONDS}, stale-while-revalidate=${STALE_WHILE_REVALIDATE}`,
+      'X-Content-Type-Options': 'nosniff',
+      'X-TLE-Group': group,
+      'X-TLE-Satellites': approxSatCount.toString(),
+      'X-Cache-TTL': CACHE_TTL_SECONDS.toString()
+    });
 
     // ✅ Devolver TLE como texto plano
-    return res.status(200).send(tleData);
+    return new Response(tleData, {
+      status: 200,
+      headers
+    });
 
   } catch (error: any) {
     // 🚨 Manejo de errores de red/timeout
@@ -112,20 +129,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error(`[TLE-PROXY] Error message: ${error.message}`);
     
     if (error.name === 'AbortError') {
-      return res.status(504).json({
+      return new Response(JSON.stringify({
         error: 'Request timeout',
         group,
         message: 'CelesTrak took too long to respond (>25s)'
+      }), {
+        status: 504,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    return res.status(500).json({
+    return new Response(JSON.stringify({
       error: 'Failed to fetch TLE data from CelesTrak',
       group,
       errorName: error.name,
       errorMessage: error.message,
       celestrakGroup: ALLOWED_GROUPS[group],
       url: `https://celestrak.org/NORAD/elements/gp.php?GROUP=${ALLOWED_GROUPS[group]}&FORMAT=tle`
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 }

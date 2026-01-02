@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import https from 'https';
 
 // 🔒 Allowlist de grupos permitidos (seguridad)
 const ALLOWED_GROUPS: Record<string, string> = {
@@ -26,6 +27,50 @@ const ALLOWED_GROUPS: Record<string, string> = {
 const CACHE_TTL_SECONDS = 2 * 24 * 60 * 60; // 2 días
 const STALE_WHILE_REVALIDATE = 24 * 60 * 60; // 1 día
 
+/**
+ * Fetch TLE data from CelesTrak using Node.js https module
+ */
+function fetchFromCelesTrak(group: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = `https://celestrak.org/NORAD/elements/gp.php?GROUP=${ALLOWED_GROUPS[group]}&FORMAT=tle`;
+    
+    const options = {
+      headers: {
+        'User-Agent': '3D-Constellation-Tracker/1.0.0 (Vercel Serverless)',
+        'Accept': 'text/plain'
+      },
+      timeout: 30000
+    };
+
+    const req = https.get(url, options, (response) => {
+      let data = '';
+
+      // Check status code
+      if (response.statusCode !== 200) {
+        reject(new Error(`HTTP ${response.statusCode}`));
+        return;
+      }
+
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+
+      response.on('end', () => {
+        resolve(data);
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('Request timeout'));
+    });
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 🎯 Extraer parámetro de constelación
   const group = (req.query['group'] as string)?.toLowerCase()?.trim();
@@ -40,39 +85,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // 🌐 Construir URL de CelesTrak (sin www para evitar SSL cert issues)
-    const celestrakUrl = new URL('https://celestrak.org/NORAD/elements/gp.php');
-    celestrakUrl.searchParams.set('GROUP', ALLOWED_GROUPS[group]);
-    celestrakUrl.searchParams.set('FORMAT', 'tle');
-
-    console.log(`[TLE-PROXY] Fetching ${group} from CelesTrak...`);
-
-    // 📡 Fetch desde CelesTrak con timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-    const celestrakResponse = await fetch(celestrakUrl.toString(), {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': '3D-Constellation-Tracker/1.0.0 (Vercel Edge Function)',
-        'Accept': 'text/plain'
-      }
-    });
-
-    clearTimeout(timeoutId);
-
-    // ❌ Manejo de errores HTTP
-    if (!celestrakResponse.ok) {
-      console.error(`[TLE-PROXY] CelesTrak returned ${celestrakResponse.status}`);
-      return res.status(502).json({
-        error: 'CelesTrak service unavailable',
-        status: celestrakResponse.status,
-        group
-      });
-    }
-
-    // 📥 Obtener contenido TLE
-    const tleData = await celestrakResponse.text();
+    // 📡 Fetch desde CelesTrak usando Node.js https module
+    const tleData = await fetchFromCelesTrak(group);
     
     // 📊 Métricas (sin loguear contenido completo)
     const lineCount = tleData.split('\n').filter(l => l.trim()).length;
@@ -105,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // 🚨 Manejo de errores de red/timeout
     console.error(`[TLE-PROXY] Error fetching ${group}:`, error.message);
     
-    if (error.name === 'AbortError') {
+    if (error.message === 'Request timeout') {
       return res.status(504).json({
         error: 'Request timeout',
         group,

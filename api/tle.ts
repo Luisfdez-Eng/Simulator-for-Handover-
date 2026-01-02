@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import https from 'https';
+import * as https from 'https';
+import type { IncomingMessage } from 'http';
 
 // 🔒 Allowlist de grupos permitidos (seguridad)
 const ALLOWED_GROUPS: Record<string, string> = {
@@ -42,7 +43,7 @@ function fetchFromCelesTrak(group: string): Promise<string> {
       timeout: 30000
     };
 
-    const req = https.get(url, options, (response) => {
+    const req = https.get(url, options, (response: IncomingMessage) => {
       let data = '';
 
       // Check status code
@@ -51,7 +52,7 @@ function fetchFromCelesTrak(group: string): Promise<string> {
         return;
       }
 
-      response.on('data', (chunk) => {
+      response.on('data', (chunk: Buffer) => {
         data += chunk;
       });
 
@@ -60,7 +61,7 @@ function fetchFromCelesTrak(group: string): Promise<string> {
       });
     });
 
-    req.on('error', (error) => {
+    req.on('error', (error: Error) => {
       reject(error);
     });
 

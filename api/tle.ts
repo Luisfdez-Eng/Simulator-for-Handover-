@@ -40,8 +40,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // 🌐 Construir URL de CelesTrak
-    const celestrakUrl = new URL('https://www.celestrak.org/NORAD/elements/gp.php');
+    // 🌐 Construir URL de CelesTrak (sin www para evitar SSL cert issues)
+    const celestrakUrl = new URL('https://celestrak.org/NORAD/elements/gp.php');
     celestrakUrl.searchParams.set('GROUP', ALLOWED_GROUPS[group]);
     celestrakUrl.searchParams.set('FORMAT', 'tle');
 

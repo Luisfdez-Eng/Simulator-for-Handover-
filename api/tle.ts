@@ -33,7 +33,10 @@ const STALE_WHILE_REVALIDATE = 24 * 60 * 60; // 1 día
  */
 function fetchFromCelesTrak(group: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const url = `https://celestrak.org/NORAD/elements/gp.php?GROUP=${ALLOWED_GROUPS[group]}&FORMAT=tle`;
+    const celestrakGroup = ALLOWED_GROUPS[group];
+    const url = `https://celestrak.org/NORAD/elements/gp.php?GROUP=${celestrakGroup}&FORMAT=tle`;
+    
+    console.log(`[TLE-FETCH] URL: ${url}`);
     
     const options = {
       headers: {
@@ -46,6 +49,9 @@ function fetchFromCelesTrak(group: string): Promise<string> {
     const req = https.get(url, options, (response: IncomingMessage) => {
       let data = '';
 
+      console.log(`[TLE-FETCH] Status: ${response.statusCode}`);
+      console.log(`[TLE-FETCH] Headers: ${JSON.stringify(response.headers)}`);
+
       // Check status code
       if (response.statusCode !== 200) {
         reject(new Error(`HTTP ${response.statusCode}`));
@@ -57,15 +63,18 @@ function fetchFromCelesTrak(group: string): Promise<string> {
       });
 
       response.on('end', () => {
+        console.log(`[TLE-FETCH] Received ${data.length} bytes`);
         resolve(data);
       });
     });
 
     req.on('error', (error: Error) => {
+      console.error(`[TLE-FETCH] Request error: ${error.message}`, error);
       reject(error);
     });
 
     req.on('timeout', () => {
+      console.error(`[TLE-FETCH] Request timeout after 30s`);
       req.destroy();
       reject(new Error('Request timeout'));
     });
@@ -86,6 +95,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    console.log(`[TLE-PROXY] Starting fetch for group: ${group}`);
+    console.log(`[TLE-PROXY] Mapped to CelesTrak group: ${ALLOWED_GROUPS[group]}`);
+    
     // 📡 Fetch desde CelesTrak usando Node.js https module
     const tleData = await fetchFromCelesTrak(group);
     
@@ -118,7 +130,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   } catch (error: any) {
     // 🚨 Manejo de errores de red/timeout
-    console.error(`[TLE-PROXY] Error fetching ${group}:`, error.message);
+    console.error(`[TLE-PROXY] ❌ Error fetching ${group}:`);
+    console.error(`[TLE-PROXY] Error message: ${error.message}`);
+    console.error(`[TLE-PROXY] Error stack:`, error.stack);
     
     if (error.message === 'Request timeout') {
       return res.status(504).json({
@@ -128,10 +142,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    return res.status(502).json({
-      error: 'Failed to fetch TLE data',
+    return res.status(500).json({
+      error: 'Failed to fetch TLE data from CelesTrak',
       group,
-      message: error.message
+      message: error.message,
+      celestrakGroup: ALLOWED_GROUPS[group],
+      url: `https://celestrak.org/NORAD/elements/gp.php?GROUP=${ALLOWED_GROUPS[group]}&FORMAT=tle`
     });
   }
 }

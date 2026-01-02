@@ -4,11 +4,6 @@
   "version": 2,
   "buildCommand": "npm run build",
   "outputDirectory": "dist/starlink-handover-visualizer",
-  "functions": {
-    "api/tle.ts": {
-      "runtime": "edge"
-    }
-  },
   "rewrites": [
     {
       "source": "/((?!api).*)",
